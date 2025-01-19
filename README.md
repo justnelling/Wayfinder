@@ -16,3 +16,7 @@ user prompt
 --> will start structuring the curriculum based on these resources and build a roadmap for you
 
 the base conceit here is that our data in the diff platforms + bookmarks + search history are an innate database of our preferences, biases, likes and desires. This is meant to ingest them, feed it into a neural system, and make it come alive -- except now, instead of predicting the next word, its to predict the next action we should take in the quest to become `xyz`.
+
+## Next steps:
+
+19/1/25: - look into pydantic AI, seems like it does a lot of the agent creation under the hood for us extremely conveniently !
