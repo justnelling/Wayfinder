@@ -1,3 +1,8 @@
+'''
+20/1/25: need to modify to include subpages + livecrawl. needs to be defined in the ExaSearchContentsResult, under the 'content' attribute, which itself shd be a dictionary that holds these other methods
+
+'''
+
 from exa_py import Exa
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Dict, Any

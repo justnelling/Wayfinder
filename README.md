@@ -42,4 +42,6 @@ Exa AI's LiveCrawl will give the most updated crawl version, because otherwise E
 
 ## Next steps:
 
+20/1/25: work more on exa_search_response.py to parse the Exa search input + output
+
 19/1/25: - look into pydantic AI, seems like it does a lot of the agent creation under the hood for us extremely conveniently !
