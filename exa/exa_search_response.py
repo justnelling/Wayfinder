@@ -1,167 +1,176 @@
-'''
-20/1/25: need to modify to include subpages + livecrawl. needs to be defined in the ExaSearchContentsResult, under the 'content' attribute, which itself shd be a dictionary that holds these other methods
-
-'''
-
 from exa_py import Exa
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Dict, Any
-import os 
+from typing import List, Optional, Union, Dict, Any, Literal
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
 @dataclass
-class ExaSearchContentsResult:
-    '''Data class for individual search results returned from Exa .search_and_contents() method: https://docs.exa.ai/integrations/python-sdk-specification#returns-example-2 + https://docs.exa.ai/reference/get-contents'''
+class SearchOptions:
+    """All available search and content options for Exa API"""
+    # Required content parameters (with defaults)
+    text: Union[Dict[str, Any], Literal[True]] = True
+    highlights: Union[Dict[str, Any], Literal[True]] = True
+    summary: Union[Dict[str, Any], Literal[True]] = True
+    
+    # Optional search parameters
+    num_results: Optional[int] = None
+    include_domains: Optional[List[str]] = None
+    exclude_domains: Optional[List[str]] = None
+    start_crawl_date: Optional[str] = None
+    end_crawl_date: Optional[str] = None
+    start_published_date: Optional[str] = None
+    end_published_date: Optional[str] = None
+    include_text: Optional[List[str]] = None
+    exclude_text: Optional[List[str]] = None
+    use_autoprompt: Optional[bool] = None
+    type: Optional[str] = None
+    category: Optional[str] = None
+    
+    # Crawling options
+    livecrawl_timeout: Optional[int] = None
+    livecrawl: Optional[str] = None  # "always", "fallback", or None
+    subpages: Optional[int] = None
+    subpage_target: Optional[Union[str, List[str]]] = None
+    filter_empty_results: Optional[bool] = None
+    
+    # Additional options
+    extras: Optional[Dict[str, int]] = None
+    flags: Optional[List[str]] = None
+
+    def to_api_params(self) -> Dict[str, Any]:
+        """Convert options to API parameters"""
+        params = {}
+        
+        # Add all non-None values to params
+        for field, value in asdict(self).items():
+            if value is not None:
+                params[field] = value
+        
+        return params
+
+@dataclass
+class ExaSearchResult:
+    """Individual search result"""
     url: str
     id: str
     text: str
     highlights: List[str]
     highlight_scores: List[float]
-    
-    # Optional fields from contents endpoint
     title: Optional[str] = None
     score: Optional[float] = None
     published_date: Optional[str] = None
     author: Optional[str] = None
-    content: Optional[str] = None
     summary: Optional[str] = None
-    subpages: Optional[List[Dict[str, Any]]] = None  # List of crawled subpages
-    error: Optional[str] = None  # Error message if content retrieval failed
-    status_code: Optional[int] = None  # HTTP status code from content retrieval
+    error: Optional[str] = None
+    status_code: Optional[int] = None
 
 @dataclass
 class ExaSearchResponse:
-    '''Data class for the complete search_contents response (list of results) including metadata'''
-    results: List[ExaSearchContentsResult]
-    resolved_search_type: Optional[str]
+    """Complete search response"""
+    results: List[ExaSearchResult]
+    resolved_search_type: Optional[str] = None
 
 class ExaSearchClient:
-    '''Client for executing Exa searches and parsing responses'''
-
     def __init__(self, api_key: Optional[str] = None):
-        '''Initialize the exa client with an API key. If no key is provided, attempts to load from environment variables.'''
+        """Initialize with API key from parameter or environment"""
         if api_key is None:
             root_dir = Path(__file__).resolve().parent.parent
             env_path = root_dir / '.env'
             load_dotenv(env_path)
             api_key = os.getenv('EXA_API_KEY')
-        
             if not api_key:
-                raise ValueError("No API key provided and EXA_API_KEY not found in env variables")
-
+                raise ValueError("No API key provided and EXA_API_KEY not found in environment")
         self.exa = Exa(api_key)
-    
-    def execute_search(
-            self,
-            query: str,
-            num_results: int = 5,
-            highlight_query: str = 'Key points',
-            highlight_count: int = 1,
-            summary_query: str = 'Main points'
+
+    def search(
+        self,
+        query: str,
+        options: Optional[SearchOptions] = None
     ) -> ExaSearchResponse:
-        '''
-        Execute a search using Exa API and return parsed results
+        """
+        Execute search with Exa API
         
         Args:
-            query: search query string
-            num_results: number of results to return
-            highlight_query: query to use for generating highlights
-            highlight_count: number of highlights per URL
-            summary_query: query to use for generating summary
-
-        Returns:
-            parsed ExaSearchResponse object
+            query: Search query string
+            options: SearchOptions instance with desired parameters
+        """
+        if options is None:
+            options = SearchOptions()
         
-        '''
-        raw_response = self.exa.search_and_contents(query,
-                                                    type='auto',
-                                                    use_autoprompt=True,
-                                                    highlights={
-                                                        'numSentences': 1,
-                                                        'highlightsPerUrl': highlight_count,
-                                                        'query': highlight_query
-                                                    },
-                                                    summary={
-                                                        'query': summary_query
-                                                    },
-                                                    num_results=num_results
-                                                    )
-
-        return self.parse_response(raw_response)
-    
-    def parse_response(self, response) -> ExaSearchResponse:
-        '''
-        Parse Exa SearchResponse return object into our structured data class
+        # Get API parameters from options
+        params = options.to_api_params()
         
-        Args:
-            response: Raw SearchResponse object from Exa API, list of results
-            
-        Returns:
-            ExaSearchResponse object containing parsed data
-        '''
-        parsed_results = []
+        # Execute search
+        response = self.exa.search_and_contents(
+            query=query,
+            **params
+        )
 
-        for result in response.results:
-            parsed_result = ExaSearchContentsResult(
-                # required fields
+        return self._parse_response(response)
+
+    def _parse_response(self, response) -> ExaSearchResponse:
+        """Internal method to parse API response"""
+        parsed_results = [
+            ExaSearchResult(
                 url=result.url,
                 id=result.id,
                 text=result.text,
                 highlights=result.highlights,
                 highlight_scores=result.highlight_scores,
-
-                # optional fields
                 title=getattr(result, 'title', None),
                 score=getattr(result, 'score', None),
                 published_date=getattr(result, 'published_date', None),
                 author=getattr(result, 'author', None),
-                content=getattr(result, 'content', None),
                 summary=getattr(result, 'summary', None),
-                subpages=getattr(result, 'subpages', None),
                 error=getattr(result, 'error', None),
                 status_code=getattr(result, 'status_code', None)
             )
-            parsed_results.append(parsed_result)
+            for result in response.results
+        ]
         
         return ExaSearchResponse(
             results=parsed_results,
             resolved_search_type=getattr(response, 'resolved_search_type', None)
         )
-    
-    def to_dict(self, response: ExaSearchResponse) -> Dict:
-        '''
-        Convert ExaSearchResponse to dictionary format
-        
-        Args:
-            response: ExaSearchResponse object
-        
-        Returns:
-            dictionary representation of the response
-        '''
-        return {
-            'results': [asdict(result) for result in response.results],
-            'resolved_search_type': response.resolved_search_type
-        }
-    
+
+# Example usage
 if __name__ == "__main__":
     client = ExaSearchClient()
+    
+    # Basic usage with defaults
+    # basic_response = client.search(
+    #     query="Latest developments in LLM capabilities"
+    # )
 
-    search_response = client.execute_search(
-        query="Here's the top 5 startups working in DNA sequencing",
+    # Advanced usage with custom options
+    options = SearchOptions(
+        text={'max_characters': 300, 'include_html_tags': False},
+        highlights={
+            'num_sentences': 1,
+            'highlights_per_url': 1,
+            'query': "Key advancements"
+        },
+        summary={'query': "Main developments"},
         num_results=5,
-        #? can also define highlights query and summary query
+        # category="research paper",
+        # include_domains=["arxiv.org"],
+        # start_published_date="2023-01-01T00:00:00.000Z",
+        # livecrawl="always",
+        # extras={'links': 1, 'image_links': 1}
+    )
+    
+    advanced_response = client.search(
+        query="The top 5 hottest AI startups out now",
+        options=options
     )
 
-    # access parsed data
-    print(f"Search type: {search_response.resolved_search_type}")
-    print(f"Found {len(search_response.results)} results")
-    for result in search_response.results:
+    # Print results
+    print(f"SEARCH TYPE: {advanced_response.resolved_search_type}")
+    for result in advanced_response.results:
         print(f"\nTitle: {result.title}")
         print(f"URL: {result.url}")
-        print("Summary:", result.summary)
-        print("Highlights:")
+        print(f"Summary: {result.summary}")
+        print(f"Text: {result.text}")
         for highlight, score in zip(result.highlights, result.highlight_scores):
             print(f"- {highlight} (score: {score})")
-        if result.subpages:
-            print(f"Number of subpages: {len(result.subpages)}")
