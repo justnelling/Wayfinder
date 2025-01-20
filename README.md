@@ -39,9 +39,3 @@ see (crawl4AI/starter_examples/2_crawl_multi_page.py) vs https://docs.exa.ai/ref
 ### Real-time crawling
 
 Exa AI's LiveCrawl will give the most updated crawl version, because otherwise Exa uses cached versions of webpages: https://docs.exa.ai/reference/should-we-use-livecrawl
-
-## Next steps:
-
-20/1/25: work more on exa_search_response.py to parse the Exa search input + output
-
-19/1/25: - look into pydantic AI, seems like it does a lot of the agent creation under the hood for us extremely conveniently !
