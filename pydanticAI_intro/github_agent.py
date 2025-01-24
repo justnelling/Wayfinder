@@ -22,7 +22,7 @@ root_dir = Path(__file__).resolve().parent.parent
 env_path = root_dir / '.env'
 load_dotenv(env_path)
 
-llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-r1')
+llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
 model = OpenAIModel(
     llm,
     base_url = 'https://openrouter.ai/api/v1',
