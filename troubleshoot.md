@@ -1,12 +1,20 @@
-# Using openrouter + deepseek in the pydanticAI calls
+# Try Instructor library next instead
+
+so pydanticAI has some intuitive haptics, but is buggy when running anthropic / openrouter + deepseek.
+
+dave ebbelar mentioned using `Instructor` library instead. try that next
+
+# PydanticAI
+
+## Using openrouter + deepseek in the pydanticAI calls
 
 super slow
 
-# Using anthropic API directly in pydanticAI calls
+## Using anthropic API directly in pydanticAI calls
 
 much faster, but there's some issue with tool use input format being incorrect
 
-# Prompter.py test run
+## Prompter.py test run
 
 even with the steady state of injected prompts now, i'm still finding that the LLM hallucinates a lot of information in the required fields.
 

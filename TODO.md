@@ -1,5 +1,11 @@
 ## Next steps:
 
+_26/1/25:_
+
+`prompter.py`: with pydanticAI is still kinda wonky, in beta.
+
+try `instructor` library next
+
 _20/1/25:_
 
 ok exa api method script pretty much done.
