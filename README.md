@@ -39,3 +39,11 @@ see (crawl4AI/starter_examples/2_crawl_multi_page.py) vs https://docs.exa.ai/ref
 ### Real-time crawling
 
 Exa AI's LiveCrawl will give the most updated crawl version, because otherwise Exa uses cached versions of webpages: https://docs.exa.ai/reference/should-we-use-livecrawl
+
+### Build the user's profile more invasively / profoundly
+
+by scraping their social media, asking them what other interests might bisect with this current lifequest, their life history, etc.
+
+### Git version tracking of the user's progress
+
+and the ability to fork to different paths

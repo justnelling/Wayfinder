@@ -1,52 +1,60 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent, RunContext, ModelRetry
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.models.anthropic import AnthropicModel
 from pathlib import Path
 from dotenv import load_dotenv
 import os
 import asyncio
+from devtools import debug
 
 # Create model
 root_dir = Path(__file__).resolve().parent.parent
 env_path = root_dir / '.env'
 load_dotenv(env_path)
 
-llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-r1')
-model = OpenAIModel(
-    llm,
-    base_url = 'https://openrouter.ai/api/v1',
-    api_key = os.getenv('OPEN_ROUTER_API_KEY')
-)
+# llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
+# print(f"Using LLM model: {llm}")
+# model = OpenAIModel(
+#     llm,
+#     base_url = 'https://openrouter.ai/api/v1',
+#     api_key = os.getenv('OPEN_ROUTER_API_KEY')
+# )
+model = AnthropicModel('claude-3-5-sonnet-latest', api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+# Define result type
+class UserProfile(BaseModel):
+    skill_level: Optional[str] = Field(default=None, description="User's current expertise level")
+    interests: Optional[List[str]] = Field(default_factory=list, description="List of user's interests")
+    time_commitment: Optional[str] = Field(default=None, description="Available time for learning")
+    geographical_context: Optional[str] = Field(default=None, description="Location and cultural context")
+    learning_style: Optional[str] = Field(default=None, description="Preferred learning methods")
+    prior_experience: Optional[List[str]] = Field(default_factory=list, description="Previous relevant experiences")
+    goals: Optional[List[str]] = Field(default_factory=list, description="Specific learning objectives")
+    constraints: Optional[List[str]] = Field(default_factory=list, description="Limitations and restrictions")
+    motivation: Optional[str] = Field(default=None, description="Core motivation for learning")
+
+    def is_complete(self) -> bool:
+        """Check if all required fields are populated"""
+        for field_name, field_value in self.model_dump().items():
+            if field_value is None or (isinstance(field_value, (str, list)) and not field_value):
+                return False
+        return True
+
+
+class ChatMessage(BaseModel): 
+    role: str
+    content: str
 
 # Define dependencies
 @dataclass
 class PrompterDependencies:
-    initial_prompt: str
-    conversation_history: List[dict] = field(default_factory=list)
-
-# Define result type
-class UserProfile(BaseModel):
-    skill_level: Optional[str] = Field(None, description="User's current skill level")
-    interests: Optional[List[str]] = Field(None, description="List of user's interests")
-    time_commitment: Optional[str] = Field(None, description="User's available time commitment")
-    geographical_context: Optional[str] = Field(
-        None, description="User's geographical context"
-    )
-    learning_style: Optional[str] = Field(
-        None, description="User's preferred learning style"
-    )
-    prior_experience: Optional[List[str]] = Field(
-        None, description="User's prior experience"
-    )
-    goals: Optional[List[str]] = Field(None, description="User's learning goals")
-    constraints: Optional[List[str]] = Field(
-        None, description="User's constraints"
-    )
-    motivation: Optional[str] = Field(
-        None, description="User's motivation for learning"
-    )
+    # initial_prompt: str
+    user_profile: UserProfile
+    conversation_history: List[ChatMessage] = field(default_factory=list)
+    
 
 system_prompt = """You are an expert career and learning path advisor. Your role is to help users create detailed profiles of their learning goals and interests. You engage in thoughtful conversation to understand their aspirations deeply.
 
@@ -82,36 +90,245 @@ CONVERSATION STAGES:
 5. Learning Preferences: Style and pace
 6. Validation: Confirm understanding and fill gaps
 
-FORMAT YOUR RESPONSES AS JSON WITH TWO FIELDS:
+RESPONSE FORMAT:
+You must return a complete UserProfile object with these fields:
 {
-    "next_question": "Your next question to the user",
-    "profile_updates": {
-        "field_name": "new information to add to profile",
-        ...
-    }
+    "skill_level": "string describing current expertise level",
+    "interests": ["list of interests"],
+    "time_commitment": "string describing available time",
+    "geographical_context": "string describing location context",
+    "learning_style": "string describing preferred learning style",
+    "prior_experience": ["list of relevant experiences"],
+    "goals": ["list of specific goals"],
+    "constraints": ["list of limitations or constraints"],
+    "motivation": "string describing core motivation"
 }
 
-Your profile_updates should fit into these categories:
-- skill_level
-- interests
-- time_commitment
-- geographical_context
-- learning_style
-- prior_experience
-- goals
-- constraints
-- motivation
+Also include a follow-up question to gather missing information. Focus each question on filling gaps in the profile data.
 
-Remember: Focus on gathering rich, qualitative data while maintaining natural conversation flow."""
+Continue the conversation until ALL fields have meaningful content. Ask focused questions to fill gaps in the profile."""
 
 # Create prompter agent
 prompter_agent = Agent(
     model,
     system_prompt=system_prompt,
     deps_type=PrompterDependencies,
+    result_type=UserProfile,
     retries=2
 )
 
+# add dynamic system prompt based on dependencies
+@prompter_agent.system_prompt
+async def add_previous_chat_history(ctx: RunContext[PrompterDependencies]) -> str:
+    return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information."
+
+# add function tool for it to evaluate if the user profile is complete, else send ModelRetry
+@prompter_agent.tool
+async def evaluate_profile(ctx: RunContext[PrompterDependencies]) -> dict:
+    """
+    Evaluate the completeness of the user profile and provide feedback.
+    
+    Returns:
+        dict: A dictionary containing the evaluation results and profile data
+    """
+    user_profile = ctx.deps.user_profile
+    profile_data = user_profile.model_dump()
+    
+    # Check for empty fields
+    empty_fields = []
+    for field_name, field_value in profile_data.items():
+        if field_value is None or (isinstance(field_value, (str, list)) and not field_value):
+            empty_fields.append(field_name)
+    
+    evaluation_result = {
+        "profile": profile_data,
+        "is_complete": len(empty_fields) == 0,
+        "empty_fields": empty_fields
+    }
+    
+    if empty_fields:
+        raise ModelRetry(f"Profile incomplete. Missing information for: {', '.join(empty_fields)}. Continue asking user questions to fill in the gaps.")
+    
+    return evaluation_result
+
+#? try run_sync
+def main():
+    
+    # Initialize with empty profile
+    initial_profile = UserProfile(
+        skill_level="",
+        interests=[],
+        time_commitment="",
+        geographical_context="",
+        learning_style="",
+        prior_experience=[],
+        goals=[],
+        constraints=[],
+        motivation=""
+    )
+    
+    try:
+        deps = PrompterDependencies(
+            conversation_history=[],
+            user_profile=initial_profile
+        )
+        
+        response = prompter_agent.run_sync(
+            "I want to learn web development",
+            deps=deps
+        )
+        debug(response)
+        print('-----------------------------------')
+        print(response.all_messages())
+        print('-----------------------------------')
+        print(response.data.model_dump_json(indent=2))
+        
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+if __name__ == "__main__":
+    main()
+
+#? try run
+# async def manage_chat(prompter_agent: Agent, initial_prompt: str) -> UserProfile:
+#     dependencies = PrompterDependencies(UserProfile())
+#     current_prompt = initial_prompt
+    
+#     # Add initial user message to conversation history
+#     dependencies.conversation_history.append(
+#         ChatMessage(role="user", content=initial_prompt)
+#     )
+
+#     while True:
+#         # Get response from LLM
+#         try:
+#             response = await prompter_agent.run(
+#                 current_prompt,
+#                 deps=dependencies
+#             )
+            
+#             debug(response)
+#         except Exception as e:
+#             raise e
+
+# async def main():
+#     initial_prompt = input("User: ")
+#     try:
+#         user_profile = await manage_chat(prompter_agent, initial_prompt)
+#         print("\nFinal User Profile:")
+#         print(user_profile.model_dump_json(indent=2))
+#     except Exception as e:
+#         print(f"An error occurred: {e}")
+
+# if __name__ == "__main__":
+#     # Suppress logfire warning``
+#     os.environ['LOGFIRE_IGNORE_NO_CONFIG'] = '1'
+    
+#     asyncio.run(main())
+
+
+# response.all_messages()
+# print(response.data.model_dump_json(indent=2)) 
+
+# def is_profile_complete(profile: UserProfile) -> bool:
+#     """Check if all required fields in the profile are meaningfully filled."""
+    
+#     # Helper function to check if a string is meaningful
+#     def is_meaningful(s: str) -> bool:
+#         return s and len(s) > 0 and s not in ["<UNKNOWN>", "unknown", "Unknown"]
+    
+#     # Helper function to check if a list is meaningful
+#     def is_meaningful_list(lst: List[str]) -> bool:
+#         return (
+#             len(lst) > 0 and 
+#             not any(item.lower().startswith("unknown") for item in lst)
+#         )
+    
+#     return all([
+#         is_meaningful(profile.skill_level),
+#         is_meaningful_list(profile.interests),
+#         is_meaningful(profile.time_commitment),
+#         is_meaningful(profile.geographical_context),
+#         is_meaningful(profile.learning_style),
+#         is_meaningful_list(profile.prior_experience),
+#         is_meaningful_list(profile.goals),
+#         is_meaningful_list(profile.constraints),
+#         is_meaningful(profile.motivation)
+#     ])
+
+# async def manage_chat(prompter_agent: Agent, initial_prompt: str) -> UserProfile:
+#     dependencies = PrompterDependencies()
+#     current_prompt = initial_prompt
+    
+#     # Add initial user message to conversation history
+#     dependencies.conversation_history.append(
+#         ChatMessage(role="user", content=initial_prompt)
+#     )
+
+#     while True:
+#         # Get response from LLM
+#         result = await prompter_agent.run(
+#             current_prompt,
+#             deps=dependencies
+#         )
+        
+#         debug(result)
+        
+#         # Get current profile state
+#         current_profile = result.data
+#         print("\nCurrent Profile State:")
+#         print(current_profile.model_dump_json(indent=2))
+
+#         # Let the LLM generate the next interaction
+#         llm_response = await prompter_agent.run(
+#             "Based on the current profile state, what specific question should we ask next to gather missing or incomplete information?",
+#             deps=dependencies
+#         )
+        
+#         # Get the LLM's question
+#         next_question = llm_response.data
+#         print(f"\nAI: {next_question}")
+        
+#         # Get user input
+#         user_response = input("You: ")
+        
+#         # Check if user wants to end conversation
+#         if user_response.lower() in ['quit', 'exit', 'done']:
+#             break
+        
+#         # Update conversation history with the actual exchange
+#         dependencies.conversation_history.extend([
+#             ChatMessage(role="assistant", content=str(next_question)),
+#             ChatMessage(role="user", content=user_response)
+#         ])
+        
+#         # Update current prompt for next iteration
+#         current_prompt = user_response
+
+#     return current_profile
+
+
+# async def main():
+#     initial_prompt = input("User: ")
+#     try:
+#         user_profile = await manage_chat(prompter_agent, initial_prompt)
+#         print("\nFinal User Profile:")
+#         print(user_profile.model_dump_json(indent=2))
+#     except Exception as e:
+#         print(f"An error occurred: {e}")
+
+# if __name__ == "__main__":
+#     # Suppress logfire warning
+#     os.environ['LOGFIRE_IGNORE_NO_CONFIG'] = '1'
+    
+#     asyncio.run(main())
+    
+
+
+
+
+def hidden():
+    
 # @prompter_agent.tool
 # async def start_conversation(ctx: RunContext[PrompterDependencies]) -> str:
 #     """Start the conversation with the user."""
@@ -181,79 +398,81 @@ prompter_agent = Agent(
 #     asyncio.run(main())
 
         
-# Function to process user responses and update profile
-async def build_user_profile():
-    # Initialize the user profile
-    user_profile = UserProfile()
+# # Function to process user responses and update profile
+# async def build_user_profile():
+#     # Initialize the user profile
+#     user_profile = UserProfile()
 
-    # Start the conversation
-    print("Assistant: What would you like to learn or become?")
-    user_input = input("User: ")
-    messages = []
+#     # Start the conversation
+#     print("Assistant: What would you like to learn or become?")
+#     user_input = input("User: ")
+#     messages = []
 
-    # Conversation loop
-    while True:
-        # Get the agent's response
-        response= await prompter_agent.run_sync(
-            user_input,
-            deps=PrompterDependencies,
-            message_history=messages
-        )
+#     # Conversation loop
+#     while True:
+#         # Get the agent's response
+#         response= await prompter_agent.run(
+#             user_input,
+#             deps=PrompterDependencies,
+#             message_history=messages
+#         )
 
-        # Update the user profile with new data
-        for field, value in response.profile_updates.items():
-            if hasattr(user_profile, field):
-                if isinstance(getattr(user_profile, field), list):
-                    getattr(user_profile, field).append(value)
-                else:
-                    setattr(user_profile, field, value)
+#         print(response.data)
 
-        # Print the next question
-        print(f"Assistant: {response.next_question}")
-        user_input = input("User: ")
+#         # # Update the user profile with new data
+#         # for field, value in response.profile_updates.items():
+#         #     if hasattr(user_profile, field):
+#         #         if isinstance(getattr(user_profile, field), list):
+#         #             getattr(user_profile, field).append(value)
+#         #         else:
+#         #             setattr(user_profile, field, value)
 
-        # Append the user's response to the conversation history
-        messages.append({"role": "assistant", "content": response.next_question})
-        messages.append({"role": "user", "content": user_input})
+#         # # Print the next question
+#         # print(f"Assistant: {response.next_question}")
+#         # user_input = input("User: ")
 
-        # Check if the conversation should end
-        if "complete" in user_input.lower():
-            break
+#         # # Append the user's response to the conversation history
+#         # messages.append({"role": "assistant", "content": response.next_question})
+#         # messages.append({"role": "user", "content": user_input})
 
-    # Return the finalized user profile
-    return user_profile
+#         # # Check if the conversation should end
+#         # if "complete" in user_input.lower():
+#         #     break
 
-# Function to create a super prompt for search APIs
-def create_super_prompt(profile: UserProfile) -> str:
-    super_prompt = f"""
-    Find learning resources for a user with the following profile:
-    - Skill Level: {profile.skill_level}
-    - Interests: {', '.join(profile.interests)}
-    - Time Commitment: {profile.time_commitment}
-    - Location/Context: {profile.geographical_context}
-    - Learning Style: {profile.learning_style}
-    - Prior Experience: {profile.prior_experience}
-    - Goals: {', '.join([f"{key}: {value}" for key, value in profile.goals.items()])}
-    - Constraints: {', '.join(profile.constraints)}
-    - Motivation: {profile.motivation}
+#     # Return the finalized user profile
+#     return user_profile
 
-    Return resources that are tailored to the user's unique needs and preferences.
-    """
-    return super_prompt
+# # Function to create a super prompt for search APIs
+# def create_super_prompt(profile: UserProfile) -> str:
+#     super_prompt = f"""
+#     Find learning resources for a user with the following profile:
+#     - Skill Level: {profile.skill_level}
+#     - Interests: {', '.join(profile.interests)}
+#     - Time Commitment: {profile.time_commitment}
+#     - Location/Context: {profile.geographical_context}
+#     - Learning Style: {profile.learning_style}
+#     - Prior Experience: {profile.prior_experience}
+#     - Goals: {', '.join([f"{key}: {value}" for key, value in profile.goals.items()])}
+#     - Constraints: {', '.join(profile.constraints)}
+#     - Motivation: {profile.motivation}
 
-# Main function
-async def main():
-    # Build the user profile
-    user_profile = await build_user_profile()
-    print("\nUser Profile:")
-    print(user_profile.model_dump())
+#     Return resources that are tailored to the user's unique needs and preferences.
+#     """
+#     return super_prompt
 
-    # Create a super prompt for search APIs
-    super_prompt = create_super_prompt(user_profile)
-    print("\nSuper Prompt for Search APIs:")
-    print(super_prompt)
+# # Main function
+# async def main():
+#     # Build the user profile
+#     user_profile = await build_user_profile()
+#     print("\nUser Profile:")
+#     print(user_profile.model_dump())
 
-# Run the script
-if __name__ == "__main__":
-    asyncio.run(main())
-        
+#     # Create a super prompt for search APIs
+#     super_prompt = create_super_prompt(user_profile)
+#     print("\nSuper Prompt for Search APIs:")
+#     print(super_prompt)
+
+# # Run the script
+# if __name__ == "__main__":
+#     asyncio.run(main())
+    pass
