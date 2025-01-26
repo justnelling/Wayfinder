@@ -6,6 +6,15 @@ _26/1/25:_
 
 try `instructor` library next
 
+our main issue right now is creating the prompt refiner logic with structured output that is:
+
+1. strictly adhered to
+2. not hallucinated to fill in the gaps by the LLM (which if you run `prompter.py` rn is what the LLM does)
+
+im thinking instead of getting the UserProfile filled up by the LLM via chat prompt, that we instead get a mix of dynamic + statically generated input fields on a form that correlates to that first prompt that the user sends in.
+
+And it needs to be a very structured pipeline
+
 _20/1/25:_
 
 ok exa api method script pretty much done.
