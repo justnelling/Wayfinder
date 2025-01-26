@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 from pydantic_ai.models.openai import OpenAIModel
@@ -15,6 +15,7 @@ root_dir = Path(__file__).resolve().parent.parent
 env_path = root_dir / '.env'
 load_dotenv(env_path)
 
+#? OpenRouter + deepseek / anthropic: slow + pydanticAI parse_response doesnt work well with OpenRouter yet
 # llm = os.getenv('LLM_MODEL', 'deepseek/deepseek-chat')
 # print(f"Using LLM model: {llm}")
 # model = OpenAIModel(
@@ -22,7 +23,12 @@ load_dotenv(env_path)
 #     base_url = 'https://openrouter.ai/api/v1',
 #     api_key = os.getenv('OPEN_ROUTER_API_KEY')
 # )
-model = AnthropicModel('claude-3-5-sonnet-latest', api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+#? Anthropic API directly from pydanticAI, having bugs with tool use calling
+# model = AnthropicModel('claude-3-5-sonnet-latest', api_key=os.getenv('ANTHROPIC_API_KEY'))
+
+#? OpenAI API
+model = OpenAIModel("gpt-4o", api_key=os.getenv('OPENAI_API_KEY'))
 
 # Define result type
 class UserProfile(BaseModel):
@@ -104,6 +110,9 @@ You must return a complete UserProfile object with these fields:
     "motivation": "string describing core motivation"
 }
 
+IMPORTANT:
+Use the `evaluate_profile` tool to evaluate if the UserProfile is incomplete. If it is incomplete, raise a ModelRetry exception with a message indicating the missing fields. Continue asking questions until all fields are filled.
+
 Also include a follow-up question to gather missing information. Focus each question on filling gaps in the profile data.
 
 Continue the conversation until ALL fields have meaningful content. Ask focused questions to fill gaps in the profile."""
@@ -114,7 +123,7 @@ prompter_agent = Agent(
     system_prompt=system_prompt,
     deps_type=PrompterDependencies,
     result_type=UserProfile,
-    retries=2
+    retries=5
 )
 
 # add dynamic system prompt based on dependencies
@@ -122,73 +131,215 @@ prompter_agent = Agent(
 async def add_previous_chat_history(ctx: RunContext[PrompterDependencies]) -> str:
     return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information."
 
-# add function tool for it to evaluate if the user profile is complete, else send ModelRetry
-@prompter_agent.tool
-async def evaluate_profile(ctx: RunContext[PrompterDependencies]) -> dict:
-    """
-    Evaluate the completeness of the user profile and provide feedback.
+async def test_chat_flow():
+    # Initialize empty profile and conversation history
+    profile = UserProfile()
+    conversation_history = []
     
-    Returns:
-        dict: A dictionary containing the evaluation results and profile data
-    """
-    user_profile = ctx.deps.user_profile
-    profile_data = user_profile.model_dump()
+    # First test - generic prompt
+    initial_prompt = "I want to learn programming"
+    print(f"\nTest 1 - Generic prompt: '{initial_prompt}'")
     
-    # Check for empty fields
-    empty_fields = []
-    for field_name, field_value in profile_data.items():
-        if field_value is None or (isinstance(field_value, (str, list)) and not field_value):
-            empty_fields.append(field_name)
-    
-    evaluation_result = {
-        "profile": profile_data,
-        "is_complete": len(empty_fields) == 0,
-        "empty_fields": empty_fields
-    }
-    
-    if empty_fields:
-        raise ModelRetry(f"Profile incomplete. Missing information for: {', '.join(empty_fields)}. Continue asking user questions to fill in the gaps.")
-    
-    return evaluation_result
-
-#? try run_sync
-def main():
-    
-    # Initialize with empty profile
-    initial_profile = UserProfile(
-        skill_level="",
-        interests=[],
-        time_commitment="",
-        geographical_context="",
-        learning_style="",
-        prior_experience=[],
-        goals=[],
-        constraints=[],
-        motivation=""
+    deps = PrompterDependencies(
+        user_profile=profile,
+        conversation_history=conversation_history
     )
     
+    # Add user input to history
+    conversation_history.append(ChatMessage(role="user", content=initial_prompt))
+    
     try:
-        deps = PrompterDependencies(
-            conversation_history=[],
-            user_profile=initial_profile
-        )
+        # Get first response
+        response1 = await prompter_agent.run(initial_prompt, deps=deps)
         
-        response = prompter_agent.run_sync(
-            "I want to learn web development",
-            deps=deps
-        )
-        debug(response)
-        print('-----------------------------------')
-        print(response.all_messages())
-        print('-----------------------------------')
-        print(response.data.model_dump_json(indent=2))
+        # Debug information about response1
+        print("\nResponse1 Object Information:")
+        print(f"Type: {type(response1)}")
+        print("\nAvailable attributes and methods:")
+        print([attr for attr in dir(response1) if not attr.startswith('_')])
         
+        # Print specific attributes if they exist
+        if hasattr(response1, 'data'):
+            print("\nResponse1.data:")
+            print(response1.data)
+        
+        if hasattr(response1, 'new_messages'):
+            print("\nResponse1.new_messages:")
+            print(response1.new_messages)
+            
+        if hasattr(response1, '_all_messages'):
+            print("\nResponse1._all_messages:")
+            for msg in response1._all_messages:
+                print(f"\nMessage type: {type(msg)}")
+                print(f"Message content: {msg}")
+                
+                # If the message has parts, examine them
+                if hasattr(msg, 'parts'):
+                    print("\nMessage parts:")
+                    for part in msg.parts:
+                        print(f"Part type: {type(part)}")
+                        print(f"Part content: {part}")
+                        print("Part attributes:", [attr for attr in dir(part) if not attr.startswith('_')])
+        
+        # Update profile
+        if response1.data:
+            profile = response1.data
+            print("\nUpdated Profile:")
+            print(profile.model_dump_json(indent=2))
+        
+        # Get assistant's message
+        assistant_message = None
+        for msg in response1._all_messages:
+            for part in msg.parts:
+                if hasattr(part, 'content') and part.content:
+                    assistant_message = part.content
+                    break
+        
+        if assistant_message:
+            print("\nExtracted Assistant Message:")
+            print(assistant_message)
+            conversation_history.append(ChatMessage(
+                role="assistant",
+                content=assistant_message
+            ))
+        
+        # Second test - more detailed prompt
+        if profile:
+            second_prompt = (
+                "I'm a college student with some basic Python experience. "
+                "I want to become a backend developer and have about 2 hours free each day to study."
+            )
+            print(f"\nTest 2 - More detailed prompt: '{second_prompt}'")
+            
+            # Update dependencies with current state
+            deps = PrompterDependencies(
+                user_profile=profile,
+                conversation_history=conversation_history
+            )
+            
+            # Add second user input to history
+            conversation_history.append(ChatMessage(role="user", content=second_prompt))
+            
+            # Get second response
+            response2 = await prompter_agent.run(second_prompt, deps=deps)
+            
+            # Debug information about response2
+            print("\nResponse2 Object Information:")
+            print(f"Type: {type(response2)}")
+            print("Available attributes and methods:")
+            print([attr for attr in dir(response2) if not attr.startswith('_')])
+            
+            if response2.data:
+                profile = response2.data
+                print("\nFinal Updated Profile:")
+                print(profile.model_dump_json(indent=2))
+            
     except Exception as e:
-        print(f"Error occurred: {e}")
+        print(f"Error occurred: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+def run_test():
+    asyncio.run(test_chat_flow())
 
 if __name__ == "__main__":
-    main()
+    run_test()
 
+
+# add function tool for it to evaluate if the user profile is complete, else send ModelRetry
+# @prompter_agent.tool
+# async def evaluate_profile(ctx: RunContext[PrompterDependencies]) -> Dict[str, Any]:
+#     """
+#     Evaluate the completeness of the user profile and provide feedback.
+#     """
+#     import logging
+#     logging.basicConfig(level=logging.DEBUG)
+#     logger = logging.getLogger(__name__)
+
+#     logger.debug("Starting profile evaluation")
+#     logger.debug(f"Input profile: {ctx.deps.user_profile.model_dump_json(indent=2)}")
+
+#     profile_data = ctx.deps.user_profile.model_dump()
+    
+#     empty_fields = [
+#         field_name 
+#         for field_name, field_value in profile_data.items()
+#         if not field_value
+#     ]
+    
+#     if empty_fields:
+#         next_field = empty_fields[0]
+#         raise ModelRetry(f"Let me ask about your {next_field.replace('_', ' ')}.")
+    
+#     return {
+#         "profile": profile_data,
+#         "is_complete": True,
+#         "empty_fields": []
+#     }
+
+# async def chat():
+#     profile = UserProfile()
+#     conversation_history = []
+    
+#     print("Welcome! Tell me what you'd like to learn.")
+#     user_input = input("You: ")
+    
+#     while True:
+#         try:
+#             # Update dependencies with current state
+#             deps = PrompterDependencies(
+#                 user_profile=profile,
+#                 conversation_history=conversation_history
+#             )
+            
+#             # Add user input to history
+#             conversation_history.append(ChatMessage(role="user", content=user_input))
+            
+#             # Get response from agent (which will use evaluate_profile internally)
+#             response = await prompter_agent.run(user_input, deps=deps)
+            
+#             # Update profile with any new information
+#             if response.data:
+#                 profile = response.data
+            
+#             # Get the assistant's response
+#             assistant_message = response.messages[-1].content
+#             conversation_history.append(ChatMessage(
+#                 role="assistant",
+#                 content=assistant_message
+#             ))
+            
+#             print(f"\nAssistant: {assistant_message}")
+            
+#             # Check if profile is complete
+#             if profile.is_complete():
+#                 print("\nProfile complete! Final profile:")
+#                 print(profile.model_dump_json(indent=2))
+#                 break
+            
+#             # Get next user input
+#             user_input = input("\nYou: ")
+#             if user_input.lower() in ['quit', 'exit']:
+#                 break
+                
+#         except ModelRetry as e:
+#             print(f"\nAssistant: {str(e)}")
+#             user_input = input("\nYou: ")
+#             if user_input.lower() in ['quit', 'exit']:
+#                 break
+            
+#         except Exception as e:
+#             print(f"Error: {e}")
+#             break
+
+# def main():
+#     import asyncio
+#     asyncio.run(chat())
+
+# if __name__ == "__main__":
+#     main()
+
+    
 #? try run
 # async def manage_chat(prompter_agent: Agent, initial_prompt: str) -> UserProfile:
 #     dependencies = PrompterDependencies(UserProfile())

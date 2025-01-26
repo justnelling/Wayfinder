@@ -1,0 +1,25 @@
+# Using openrouter + deepseek in the pydanticAI calls
+
+super slow
+
+# Using anthropic API directly in pydanticAI calls
+
+much faster, but there's some issue with tool use input format being incorrect
+
+# Prompter.py test run
+
+even with the steady state of injected prompts now, i'm still finding that the LLM hallucinates a lot of information in the required fields.
+
+i'm thinking instead of building the profile through LLM interactions, we minimize this language part as much as possible, and stick to old-fashioned profile input fields in a form.
+
+## then the pipeline can be:
+
+maybe still chat landing page -->
+
+if met with generic prompt:
+--> launch profile input form filling page
+
+if met with comprehensive prompt:
+--> we try to parse it out with the LLM,
+
+takes the entire comprehensive profile schema + user prompt --> sends it to exa AI neural search API to get the most thorough results
