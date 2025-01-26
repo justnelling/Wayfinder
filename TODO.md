@@ -2,6 +2,8 @@
 
 _26/1/25:_
 
+#### Getting structured output in UserProfile correctly
+
 `prompter.py`: with pydanticAI is still kinda wonky, in beta.
 
 try `instructor` library next
@@ -16,6 +18,10 @@ im thinking instead of getting the UserProfile filled up by the LLM via chat pro
 And it needs to be a very structured pipeline:
 
 ![alt text](media/image.png)
+
+#### Setting up the correct chat mechanism
+
+this still WIP: need to study https://ai.pydantic.dev/examples/chat-app/
 
 _20/1/25:_
 
