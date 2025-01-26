@@ -6,6 +6,12 @@ a roadmap generator that will create and _learn from your profile_, to generate 
 - will have gamified checkpoints that will reflect your progress, allow feedback on how the course is structured so far, allow you to fork in a different direction, etc.
 - will break down into stages of progression, such that at different stages the kinds of resources change and scale
 
+## Fundamental questions to ask (field its in, space for a pivot)
+
+1. this takes us from a user already knowing what they want. What if they don't know? or are uninspired and stuck? --> What if we could create the ultimate most generalist "writer's block" solution to general uninspired-ness app?
+
+2. I'm working on parsing structured data + consolidating a really haptic user profile to feed into a web search --> could this more generally be a refined web search solution?
+
 ## Differentation
 
 there are other products out there, but none look polished enough or sufficiently tailored to the individual.
