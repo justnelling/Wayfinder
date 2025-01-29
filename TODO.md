@@ -13,7 +13,15 @@ our main issue right now is creating the prompt refiner logic with structured ou
 1. strictly adhered to
 2. not hallucinated to fill in the gaps by the LLM (which if you run `prompter.py` rn is what the LLM does)
 
+right now, with pydanticAI + openAI API directly, we get the structured schema back, but its hallucinating its contents.
+
 im thinking instead of getting the UserProfile filled up by the LLM via chat prompt, that we instead get a mix of dynamic + statically generated input fields on a form that correlates to that first prompt that the user sends in.
+
+#### to get structured data, openAI API directly seems promising
+
+https://www.youtube.com/watch?v=fuMKrKlaku4&t=500s
+
+#### Overall pipeline
 
 And it needs to be a very structured pipeline:
 

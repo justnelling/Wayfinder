@@ -49,6 +49,9 @@ class UserProfile(BaseModel):
                 return False
         return True
 
+class AgentResponse(BaseModel):
+    profile: UserProfile
+    follow_up_question: str
 
 class ChatMessage(BaseModel): 
     role: str
@@ -56,7 +59,7 @@ class ChatMessage(BaseModel):
 
 # Define dependencies
 @dataclass
-class PrompterDependencies:
+class AgentDependencies:
     # initial_prompt: str
     user_profile: UserProfile
     conversation_history: List[ChatMessage] = field(default_factory=list)
@@ -97,38 +100,36 @@ CONVERSATION STAGES:
 6. Validation: Confirm understanding and fill gaps
 
 RESPONSE FORMAT:
-You must return a complete UserProfile object with these fields:
+Return a JSON object with two fields:
 {
-    "skill_level": "string describing current expertise level",
-    "interests": ["list of interests"],
-    "time_commitment": "string describing available time",
-    "geographical_context": "string describing location context",
-    "learning_style": "string describing preferred learning style",
-    "prior_experience": ["list of relevant experiences"],
-    "goals": ["list of specific goals"],
-    "constraints": ["list of limitations or constraints"],
-    "motivation": "string describing core motivation"
+    "profile": {
+        "skill_level": "string describing current expertise level",
+        "interests": ["list of interests"],
+        "time_commitment": "string describing available time",
+        "geographical_context": "string describing location context",
+        "learning_style": "string describing preferred learning style",
+        "prior_experience": ["list of relevant experiences"],
+        "goals": ["list of specific goals"],
+        "constraints": ["list of limitations or constraints"],
+        "motivation": "string describing core motivation"
+    },
+    "follow_up_question": "Your next question to ask the user"
 }
-
-IMPORTANT:
-Use the `evaluate_profile` tool to evaluate if the UserProfile is incomplete. If it is incomplete, raise a ModelRetry exception with a message indicating the missing fields. Continue asking questions until all fields are filled.
-
-Also include a follow-up question to gather missing information. Focus each question on filling gaps in the profile data.
-
-Continue the conversation until ALL fields have meaningful content. Ask focused questions to fill gaps in the profile."""
+You must return a complete user profile. Keep asking the follow up question until the user profile is complete and comprehensive.
+"""
 
 # Create prompter agent
 prompter_agent = Agent(
     model,
     system_prompt=system_prompt,
-    deps_type=PrompterDependencies,
-    result_type=UserProfile,
-    retries=5
+    deps_type=AgentDependencies,
+    result_type=AgentResponse,
+    retries=2
 )
 
-# add dynamic system prompt based on dependencies
+# add dynamic system prompt based on dependencies #? (changed to tool call for now) --> but this seemed to be causing repeated requests to the openAI API, thus the lag
 @prompter_agent.system_prompt
-async def add_previous_chat_history(ctx: RunContext[PrompterDependencies]) -> str:
+async def ask_next_question(ctx: RunContext[AgentDependencies]) -> str:
     return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information."
 
 async def test_chat_flow():
@@ -136,108 +137,45 @@ async def test_chat_flow():
     profile = UserProfile()
     conversation_history = []
     
-    # First test - generic prompt
-    initial_prompt = "I want to learn programming"
-    print(f"\nTest 1 - Generic prompt: '{initial_prompt}'")
+    print("Welcome to your life path! What would you like to become?\n")
+
+    while True:
+        # Get user input from CLI
+        user_input = input("You: ").strip()
+
+        # Exit condition
+        if user_input.lower() == "exit":
+            print("Goodbye!")
+            break
     
-    deps = PrompterDependencies(
-        user_profile=profile,
-        conversation_history=conversation_history
-    )
-    
-    # Add user input to history
-    conversation_history.append(ChatMessage(role="user", content=initial_prompt))
-    
-    try:
-        # Get first response
-        response1 = await prompter_agent.run(initial_prompt, deps=deps)
+        # Add user input to history
+        conversation_history.append(ChatMessage(role="user", content=user_input))
+
+        deps = AgentDependencies(user_profile=profile, conversation_history=conversation_history)
         
-        # Debug information about response1
-        print("\nResponse1 Object Information:")
-        print(f"Type: {type(response1)}")
-        print("\nAvailable attributes and methods:")
-        print([attr for attr in dir(response1) if not attr.startswith('_')])
-        
-        # Print specific attributes if they exist
-        if hasattr(response1, 'data'):
-            print("\nResponse1.data:")
-            print(response1.data)
-        
-        if hasattr(response1, 'new_messages'):
-            print("\nResponse1.new_messages:")
-            print(response1.new_messages)
-            
-        if hasattr(response1, '_all_messages'):
-            print("\nResponse1._all_messages:")
-            for msg in response1._all_messages:
-                print(f"\nMessage type: {type(msg)}")
-                print(f"Message content: {msg}")
-                
-                # If the message has parts, examine them
-                if hasattr(msg, 'parts'):
-                    print("\nMessage parts:")
-                    for part in msg.parts:
-                        print(f"Part type: {type(part)}")
-                        print(f"Part content: {part}")
-                        print("Part attributes:", [attr for attr in dir(part) if not attr.startswith('_')])
-        
-        # Update profile
-        if response1.data:
-            profile = response1.data
-            print("\nUpdated Profile:")
-            print(profile.model_dump_json(indent=2))
-        
-        # Get assistant's message
-        assistant_message = None
-        for msg in response1._all_messages:
-            for part in msg.parts:
-                if hasattr(part, 'content') and part.content:
-                    assistant_message = part.content
-                    break
-        
-        if assistant_message:
-            print("\nExtracted Assistant Message:")
-            print(assistant_message)
-            conversation_history.append(ChatMessage(
-                role="assistant",
-                content=assistant_message
-            ))
-        
-        # Second test - more detailed prompt
-        if profile:
-            second_prompt = (
-                "I'm a college student with some basic Python experience. "
-                "I want to become a backend developer and have about 2 hours free each day to study."
-            )
-            print(f"\nTest 2 - More detailed prompt: '{second_prompt}'")
-            
-            # Update dependencies with current state
-            deps = PrompterDependencies(
-                user_profile=profile,
-                conversation_history=conversation_history
-            )
-            
-            # Add second user input to history
-            conversation_history.append(ChatMessage(role="user", content=second_prompt))
-            
-            # Get second response
-            response2 = await prompter_agent.run(second_prompt, deps=deps)
-            
-            # Debug information about response2
-            print("\nResponse2 Object Information:")
-            print(f"Type: {type(response2)}")
-            print("Available attributes and methods:")
-            print([attr for attr in dir(response2) if not attr.startswith('_')])
-            
-            if response2.data:
-                profile = response2.data
-                print("\nFinal Updated Profile:")
+        try:
+            response1 = await prompter_agent.run(user_input, deps=deps)
+
+            if response1.data:
+                # Update profile
+                profile = response1.data.profile
+                print("\nUpdated Profile:")
                 print(profile.model_dump_json(indent=2))
-            
-    except Exception as e:
-        print(f"Error occurred: {str(e)}")
-        import traceback
-        traceback.print_exc()
+                
+                # Print follow-up question
+                print("\nFollow-up Question:")
+                print(response1.data.follow_up_question)
+                
+                # Add assistant's follow-up question to conversation history
+                conversation_history.append(ChatMessage(
+                    role="assistant",
+                    content=response1.data.follow_up_question
+                ))
+                
+        except Exception as e:
+            print(f"Error occurred: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
 def run_test():
     asyncio.run(test_chat_flow())

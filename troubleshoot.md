@@ -16,7 +16,9 @@ much faster, but there's some issue with tool use input format being incorrect
 
 ## Prompter.py test run
 
-even with the steady state of injected prompts now, i'm still finding that the LLM hallucinates a lot of information in the required fields.
+(with openai API directly via pydanticAI)
+
+even with the steady state of injected prompts now returning my structured schema data, the LLM hallucinates a lot of information in the required fields -- aka it can guarantee the enum structure but it still hallucinates the content
 
 i'm thinking instead of building the profile through LLM interactions, we minimize this language part as much as possible, and stick to old-fashioned profile input fields in a form.
 
