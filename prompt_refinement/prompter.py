@@ -123,7 +123,7 @@ prompter_agent = Agent(
     model,
     system_prompt=system_prompt,
     deps_type=AgentDependencies,
-    result_type=AgentResponse,
+    result_type=AgentResponse, #! had to update result_type dummy ! 
     retries=2
 )
 
@@ -131,6 +131,9 @@ prompter_agent = Agent(
 @prompter_agent.system_prompt
 async def ask_next_question(ctx: RunContext[AgentDependencies]) -> str:
     return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information."
+
+
+#? define a tool call where it can evaluate the completeness of the userprofile, and end this chat phase and move to the next. also the followup questions are really good! but not all being captured into the prfoile. need to fix that!
 
 async def test_chat_flow():
     # Initialize empty profile and conversation history
