@@ -133,8 +133,7 @@ Return a JSON object with two fields:
     },
     "follow_up_question": "Your next question to ask the user"
 }
-
-DO NOT PRE-EMPTIVELY FILL UP ALL THE FIELDS. Ask questions one by one and fill up the profile gradually.
+IMPORTANT: Do not make assumptions or fill in profile fields without explicit information from the user. Ask questions one by one and fill up the profile gradually.
 Keep asking the follow up question until the user profile is complete and comprehensive.
 """
 
