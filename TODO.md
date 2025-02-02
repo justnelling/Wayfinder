@@ -1,5 +1,11 @@
 ## Next steps:
 
+_1/2/25_
+
+define toolcall that will evaluate for profile completeness
+
+start exploring how to pass this 'full' profile into exa AI
+
 _26/1/25:_
 
 #### Getting structured output in UserProfile correctly

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry
 from pydantic_ai.models.openai import OpenAIModel
@@ -28,7 +28,7 @@ load_dotenv(env_path)
 # model = AnthropicModel('claude-3-5-sonnet-latest', api_key=os.getenv('ANTHROPIC_API_KEY'))
 
 #? OpenAI API
-model = OpenAIModel("gpt-4o", api_key=os.getenv('OPENAI_API_KEY'))
+model = OpenAIModel("gpt-4o-mini", api_key=os.getenv('OPENAI_API_KEY'))
 
 # Define result type
 class UserProfile(BaseModel):
@@ -42,12 +42,30 @@ class UserProfile(BaseModel):
     constraints: Optional[List[str]] = Field(default_factory=list, description="Limitations and restrictions")
     motivation: Optional[str] = Field(default=None, description="Core motivation for learning")
 
-    def is_complete(self) -> bool:
-        """Check if all required fields are populated"""
-        for field_name, field_value in self.model_dump().items():
-            if field_value is None or (isinstance(field_value, (str, list)) and not field_value):
-                return False
-        return True
+    def is_complete(self) -> Tuple[bool, List[str]]:
+        """
+        Check if all fields meet requirements.
+        Returns (is_complete, list_of_missing_fields)
+        """
+        requirements = {
+            'skill_level': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
+            'interests': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
+            'time_commitment': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
+            'geographical_context': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
+            'learning_style': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
+            'prior_experience': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
+            'goals': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
+            'constraints': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
+            'motivation': lambda x: x is not None and isinstance(x, str) and len(x) >= 15
+        }
+
+        missing_fields = []
+        for field, requirement in requirements.items():
+            value = getattr(self, field)
+            if not requirement(value):
+                missing_fields.append(field)
+
+        return len(missing_fields) == 0, missing_fields
 
 class AgentResponse(BaseModel):
     profile: UserProfile
@@ -65,7 +83,7 @@ class AgentDependencies:
     conversation_history: List[ChatMessage] = field(default_factory=list)
     
 
-system_prompt = """You are an expert career and learning path advisor. Your role is to help users create detailed profiles of their learning goals and interests. You engage in thoughtful conversation to understand their aspirations deeply.
+system_prompt = """You are an expert career and learning path advisor. Your role is to help users create detailed profiles of their learning goals and interests. You engage in thoughtful conversation to understand their aspirations deeply. 
 
 KEY OBJECTIVES:
 1. Build a comprehensive understanding of the user's goals through strategic questioning
@@ -115,7 +133,9 @@ Return a JSON object with two fields:
     },
     "follow_up_question": "Your next question to ask the user"
 }
-You must return a complete user profile. Keep asking the follow up question until the user profile is complete and comprehensive.
+
+DO NOT PRE-EMPTIVELY FILL UP ALL THE FIELDS. Ask questions one by one and fill up the profile gradually.
+Keep asking the follow up question until the user profile is complete and comprehensive.
 """
 
 # Create prompter agent
@@ -134,6 +154,21 @@ async def ask_next_question(ctx: RunContext[AgentDependencies]) -> str:
 
 
 #? define a tool call where it can evaluate the completeness of the userprofile, and end this chat phase and move to the next. also the followup questions are really good! but not all being captured into the prfoile. need to fix that!
+async def check_profile_completion(profile: UserProfile) -> bool:
+    """
+    Check if the user profile is complete and return completion status and missing fields.
+    Args:
+        profile: The UserProfile object to evaluate
+    Returns:
+        Tuple of (is_complete: bool, missing_fields: list[str])
+    """
+    is_complete, missing_fields = profile.is_complete()
+    
+    if not is_complete:
+        print(f"Incomplete fields: {missing_fields}")
+    
+    return is_complete
+
 
 async def test_chat_flow():
     # Initialize empty profile and conversation history
@@ -164,8 +199,14 @@ async def test_chat_flow():
                 profile = response1.data.profile
                 print("\nUpdated Profile:")
                 print(profile.model_dump_json(indent=2))
+
+                # Check profile completion
+                is_complete = await check_profile_completion(profile)
                 
-                # Print follow-up question
+                if is_complete:
+                    print("\nProfile is complete! Moving to next phase...")
+                    break
+           # Print follow-up question
                 print("\nFollow-up Question:")
                 print(response1.data.follow_up_question)
                 
