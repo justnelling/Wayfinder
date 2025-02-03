@@ -2,6 +2,16 @@
 
 _3/2/25_
 
+ok next steps: have to experiment with different user profile types, and see how long it takes for different AI models to respond as well as the quality of the responses.
+
+---- DONE ----
+
+now we need to finetune our continuation prompt for each of the subnodes in `pathway_generator.py` because that really needs to do 2 things:
+
+1. inherit from the original richness of the user profile
+2. but also narrow down to that specific node in the learning path so the results from Exa AI are super precise and rich!
+
+---- DONE ----
 ok now we have user profile + exa web search parsing.
 
 but i think we need an intermediate logic layer that will pass the user profile to an LLM, with the express purpose of getting it to create a learning pathway curriculum (tree-like structure, like in https://www.airoadmapgenerator.com/roadmap/cm5prf2d90001dancj85l382m), and then within each node more specifically it will look up the relevant resources, which will be even more hyper-focused and targeted

@@ -8,6 +8,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import asyncio
+import time
+from functools import wraps
+
+'''
+#! TODO: 3/2/25
+
+ok next steps: have to experiment with different user profile types, and see how long it takes for different AI models to respond as well as the quality of the responses.
+
+'''
 
 # System prompt for the curriculum builder LLM
 CURRICULUM_BUILDER_SYSTEM_PROMPT = """
@@ -131,29 +140,19 @@ def parse_llm_response_to_learning_node(llm_response: str) -> LearningNode:
         
     except Exception as e:
         raise ValueError(f"Failed to parse LLM response: {str(e)}")
-
-def generate_continuation_queries_recursive(node: LearningNode) -> LearningNode:
-    """
-    Recursively generate continuation queries for each node and its subnodes.
-    """
-    # Generate continuation query for current node
-    context_text = f"""
-        f"Context: {node.description}\n"
-        f"Looking for learning resources about {node.title} "
-        f"including tutorials, guides, and practical examples covering: "
-        f"{', '.join(node.key_concepts)}. "
-        f"Focus on {node.difficulty} level content."
-    """
-
-    node.continuation_query = context_text + "Given the above requirements, here are the top most relevant resources that you can use to learn more about this topic:"
-
     
-    # Recursively generate queries for subnodes
-    for sub_node in node.sub_nodes:
-        generate_continuation_queries_recursive(sub_node)
-    
-    return node
 
+def async_measure_time(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = await func(*args, **kwargs)
+        end_time = time.perf_counter()
+        print(f"{func.__name__} executed in {end_time - start_time:0.4f} seconds")
+        return result
+    return wrapper
+
+@async_measure_time
 async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     '''
     main function to create complete learning pathway tree.
@@ -185,8 +184,76 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     9. Subnodes: Breakdown of subtopics and component skills. This is a list of other LearningNode objects
     10. Continuation Query: Search prompt for finding relevant learning materials
     
-    For each node's continuation_query, format it as follows:
-    "[Topic Description and Context] If you want to learn more about [topic], here are the top practical tutorials, guides, and learning resources you should follow: "
+        For each node in the learning pathway, create a personalized Continuation Query that:
+        1. References the user's skill level and learning style
+        2. Considers their time commitment
+        3. Builds upon their prior experience
+        4. Aligns with their specific goals
+        5. Takes into account where this node fits in the overall learning journey"
+
+        Format each continuation_query as follows:
+        "Given a {profile_dict.get('skill_level')} learner with {profile_dict.get('learning_style')} learning style, 
+        who has {profile_dict.get('time_commitment')} available and background in {', '.join(profile_dict.get('prior_experience', []))}, 
+        looking to {', '.join(profile_dict.get('goals', []))}: 
+        
+        Currently focusing on [node topic] which covers [key concepts].
+        This is a [difficulty] level topic that builds upon [prerequisites].
+        
+        If you're interested in mastering this topic through {profile_dict.get('learning_style')} learning, 
+        here are some carefully selected resources that match your background and learning style: "
+
+        Remember to adjust the difficulty and complexity of resources in the continuation queries based on:
+        1. Where this node appears in the learning sequence
+        2. The user's current skill level
+        3. Their prior experience with prerequisites
+        4. The time they have available to dedicate to learning
+    
+    IMPORTANT STRUCTURAL REQUIREMENTS:
+    1. The learning pathway MUST have AT LEAST 3 hierarchical levels:
+        Level 1 (Root): The main learning journey
+        Level 2: Major topic areas or modules (at least 3)
+        Level 3: Specific learning units or lessons (at least 2-3 per Level 2 module)
+
+    Example structure:
+    Level 1 (Root): "Machine Learning Engineering"
+    ├── Level 2: "Mathematics Foundations"
+    │   ├── Level 3: "Linear Algebra Essentials"
+    │   ├── Level 3: "Calculus Fundamentals"
+    │   └── Level 3: "Probability & Statistics"
+    ├── Level 2: "Programming Fundamentals"
+    │   ├── Level 3: "Python Programming"
+    │   ├── Level 3: "Data Structures"
+    │   └── Level 3: "Algorithms"
+    └── Level 2: "Machine Learning Basics"
+        ├── Level 3: "Supervised Learning"
+        ├── Level 3: "Unsupervised Learning"
+        └── Level 3: "Model Evaluation"
+
+    For each level:
+    - Level 1: Provides the overall learning journey structure and high-level roadmap
+    - Level 2: Breaks down into major skill areas or knowledge domains (minimum 3 modules)
+    - Level 3: Details specific learning units with concrete, actionable content (minimum 2-3 per Level 2 module)
+
+    Progression Guidelines:
+    1. Each level should build upon the previous one
+    2. Level 2 modules should be ordered by prerequisite dependencies
+    3. Level 3 units should represent 1-2 weeks of learning each
+    4. Consider the user's time commitment of {profile_dict.get('time_commitment')} when structuring units
+
+    For each node at every level, provide:
+    [... previous node requirements section ...]
+
+    Each Level 2 module MUST include:
+    - Clear prerequisites from other Level 2 modules
+    - At least 2-3 Level 3 sub-nodes
+    - Estimated duration for the entire module
+    - Learning objectives that tie to the overall goals
+
+    Each Level 3 unit MUST include:
+    - Specific, hands-on learning activities
+    - Concrete deliverables or projects
+    - Direct connection to user's goals: {', '.join(profile_dict.get('goals', []))}
+    - Detailed key concepts and skills
 
     Return the learning pathway as a JSON object that strictly follows this schema:
     {{
@@ -205,7 +272,22 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
         ],
         "continuation_query": null
     }}
-    
+
+    VALIDATION CHECKLIST:
+    - Root node (Level 1) represents the complete learning journey
+    - At least 3 major modules (Level 2) are defined
+    - Each Level 2 module has at least 2-3 specific learning units (Level 3)
+    - Clear progression and prerequisites between modules
+    - All nodes must have properly formatted continuation queries
+    - Total estimated duration matches user's time commitment
+    - Learning objectives align with user's goals at each level
+
+    Before returning the response, verify that:
+    1. All three levels are properly populated
+    2. Each level has the minimum required number of nodes
+    3. Prerequisites form a logical learning sequence
+    4. Time estimates are realistic given the user's commitment of {profile_dict.get('time_commitment')}
+
     IMPORTANT: be sure to think through the iterative steps in this learning path and think of sub-nodes involved in the step-by-step approach to learning in this pathway. Populate these as sub_nodes following the same structure as the parent node.
 
     """
@@ -219,9 +301,6 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
         # You might need to add error handling here
         learning_pathway = parse_llm_response_to_learning_node(llm_response)
 
-        #! generate the continuation queries
-        # learning_pathway = generate_continuation_queries_recursive(learning_pathway)
-        
         return learning_pathway
     
     except Exception as e:
@@ -288,6 +367,7 @@ def print_node_structure(node: LearningNode, level: int = 0):
     print(f"{indent}Description: {node.description or 'No description'}")
     print(f"{indent}Difficulty: {node.difficulty or 'Not specified'}")
     print(f"{indent}Duration: {node.estimated_duration or 'Not specified'}")
+    print(f"{indent}Continuation Query: {node.continuation_query or 'Not specified'}")
     
     print(f"{indent}Learning Objectives:")
     for objective in (node.learning_objectives or []):
