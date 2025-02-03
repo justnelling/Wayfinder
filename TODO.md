@@ -4,6 +4,10 @@ _3/2/25_
 
 ok next steps: have to experiment with different user profile types, and see how long it takes for different AI models to respond as well as the quality of the responses.
 
+test how the new pathway_generator works.
+
+if we can verify that it always deterministically generates at least 3 layers of learning pathway tree, then next stretch goal is to figure out a function to extend that depth infinitely, or if its reached the local maxima of what can be learnt in that pathway, suggest next actions
+
 ---- DONE ----
 
 now we need to finetune our continuation prompt for each of the subnodes in `pathway_generator.py` because that really needs to do 2 things:
