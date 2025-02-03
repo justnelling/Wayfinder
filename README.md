@@ -12,6 +12,12 @@ a roadmap generator that will create and _learn from your profile_, to generate 
 
 2. I'm working on parsing structured data + consolidating a really haptic user profile to feed into a web search --> could this more generally be a refined web search solution?
 
+## Competitors
+
+https://www.airoadmapgenerator.com/roadmap/cm5prf2d90001dancj85l382m
+
+    i like how they immediately graphify it, and it becomes a tree that breaks down the task into iterative learning steps
+
 ## Differentation
 
 there are other products out there, but none look polished enough or sufficiently tailored to the individual.

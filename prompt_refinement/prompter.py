@@ -132,7 +132,7 @@ Return a JSON object with two fields:
         "geographical_context": "string describing location context",
         "learning_style": "string describing preferred learning style",
         "prior_experience": ["list of relevant experiences"],
-        "goals": ["list of specific goals"],
+        "goals": ["list of specific goals, short and long term"],
         "constraints": ["list of limitations or constraints"],
         "motivation": "string describing core motivation"
     },
@@ -211,7 +211,7 @@ async def test_chat_flow():
                 if is_complete:
                     print("\nProfile is complete! Moving to next phase...")
 
-                    return profile
+                    return profile.model_dump() # return as python dictionary
                 
                 # if there are still missing fields, we make a second call to the LLM just to generate a more targeted follow-up question
                 missing_fields_deps = missing_fields

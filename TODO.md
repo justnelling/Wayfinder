@@ -1,5 +1,11 @@
 ## Next steps:
 
+_3/2/25_
+
+ok now we have user profile + exa web search parsing.
+
+but i think we need an intermediate logic layer that will pass the user profile to an LLM, with the express purpose of getting it to create a learning pathway curriculum (tree-like structure, like in https://www.airoadmapgenerator.com/roadmap/cm5prf2d90001dancj85l382m), and then within each node more specifically it will look up the relevant resources, which will be even more hyper-focused and targeted
+
 _2/2/25_
 
 task now is to figure out how to map our user profile unto exa AI search API to get a truly tailored search request

@@ -94,6 +94,7 @@ class ExaSearchClient:
             api_key = os.getenv('EXA_API_KEY')
             if not api_key:
                 raise ValueError("No API key provided and EXA_API_KEY not found in environment")
+            
         self.exa = Exa(api_key)
 
     def search(
@@ -146,48 +147,71 @@ class ExaSearchClient:
             results=parsed_results,
             resolved_search_type=getattr(response, 'resolved_search_type', None)
         )
-    
+
+def create_curriculum_focused_exa_query(profile_dict: dict) -> str:
+    base_text = f"""
+    Designing a personalized learning curriculum for someone pursuing {profile_dict.get('life_path', 'their chosen field')}. 
+    Key specifications:
+    - Current proficiency: {profile_dict.get('skill_level', 'beginner')}
+    - Focus areas: {', '.join(profile_dict.get('interests', []))}
+    - Available study time: {profile_dict.get('time_commitment', 'flexible')}
+    - Location/Context: {profile_dict.get('geographical_context', 'remote')}
+    - Preferred learning method: {profile_dict.get('learning_style', 'various')}
+
+    The learner brings experience in {', '.join(profile_dict.get('prior_experience', []))} 
+    and is motivated by {profile_dict.get('motivation', 'personal growth')}. 
+    Their specific learning objectives include {', '.join(profile_dict.get('goals', []))}, 
+    while working within constraints of {', '.join(profile_dict.get('constraints', []))}.
+    """
+
+    # Continuation query focused on finding curriculum resources
+    continuation_query = base_text + " To build an effective learning pathway for this user's profile, here's a comprehensive list of learning materials, youtube tutorials, online courses, op-ed pieces and similar resources:"
+
+    return continuation_query
+
 def main():
-    completed_profile = run_test()
+    completed_profile = run_test() # python dictionary
 
-    # client = ExaSearchClient()
-    
-    # # Basic usage with defaults
-    # # basic_response = client.search(
-    # #     query="Latest developments in LLM capabilities"
-    # # )
+    curriculum_query = create_curriculum_focused_exa_query(completed_profile)
 
-    # # Advanced usage with custom options
-    # options = SearchOptions(
-    #     text={'max_characters': 300, 'include_html_tags': False},
-    #     highlights={
-    #         'num_sentences': 1,
-    #         'highlights_per_url': 1,
-    #         'query': "Key advancements"
-    #     },
-    #     summary={'query': "Main developments"},
-    #     num_results=5,
-    #     # category="research paper",
-    #     # include_domains=["arxiv.org"],
-    #     # start_published_date="2023-01-01T00:00:00.000Z",
-    #     # livecrawl="always",
-    #     # extras={'links': 1, 'image_links': 1}
-    # )
+    client = ExaSearchClient()
     
-    # advanced_response = client.search(
-    #     query="The top 5 hottest AI startups out now",
-    #     options=options
+    # Basic usage with defaults
+    # basic_response = client.search(
+    #     query=curriculum_query,
     # )
 
-    # # Print results
-    # print(f"SEARCH TYPE: {advanced_response.resolved_search_type}")
-    # for result in advanced_response.results:
-    #     print(f"\nTitle: {result.title}")
-    #     print(f"URL: {result.url}")
-    #     print(f"Summary: {result.summary}")
-    #     print(f"Text: {result.text}")
-    #     for highlight, score in zip(result.highlights, result.highlight_scores):
-    #         print(f"- {highlight} (score: {score})")
+    # Advanced usage with custom options
+    options = SearchOptions(
+        text={'max_characters': 200, 'include_html_tags': False},
+        # highlights={
+        #     'num_sentences': 1,
+        #     'highlights_per_url': 1,
+        #     'query': "Key points"
+        # },
+        summary={'query': "Key points"},
+        num_results=10,
+        # category="research paper",
+        # include_domains=["arxiv.org"],
+        # start_published_date="2023-01-01T00:00:00.000Z",
+        # livecrawl="always",
+        # extras={'links': 1, 'image_links': 1}
+    )
+    
+    advanced_response = client.search(
+        query=curriculum_query,
+        options=options
+    )
+
+    # Print results
+    print(f"SEARCH TYPE: {advanced_response.resolved_search_type}")
+    for result in advanced_response.results:
+        print(f"\nTitle: {result.title}")
+        print(f"URL: {result.url}")
+        print(f"Summary: {result.summary}")
+        print(f"Text: {result.text}")
+        # for highlight, score in zip(result.highlights, result.highlight_scores):
+        #     print(f"- {highlight} (score: {score})")
 
 # Example usage
 if __name__ == "__main__":
