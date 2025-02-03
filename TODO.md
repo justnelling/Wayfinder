@@ -1,5 +1,9 @@
 ## Next steps:
 
+_2/2/25_
+
+task now is to figure out how to map our user profile unto exa AI search API to get a truly tailored search request
+
 _1/2/25_
 
 define toolcall that will evaluate for profile completeness

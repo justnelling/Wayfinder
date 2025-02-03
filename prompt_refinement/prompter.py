@@ -32,6 +32,7 @@ model = OpenAIModel("gpt-4o-mini", api_key=os.getenv('OPENAI_API_KEY'))
 
 # Define result type
 class UserProfile(BaseModel):
+    life_path: Optional[str] = Field(default=None, description="User's desired career or learning path")
     skill_level: Optional[str] = Field(default=None, description="User's current expertise level")
     interests: Optional[List[str]] = Field(default_factory=list, description="List of user's interests")
     time_commitment: Optional[str] = Field(default=None, description="Available time for learning")
@@ -48,6 +49,7 @@ class UserProfile(BaseModel):
         Returns (is_complete, list_of_missing_fields)
         """
         requirements = {
+            'life_path': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
             'skill_level': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
             'interests': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
             'time_commitment': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
@@ -81,6 +83,7 @@ class AgentDependencies:
     # initial_prompt: str
     user_profile: UserProfile
     conversation_history: List[ChatMessage] = field(default_factory=list)
+    missing_fields: List[str] = field(default_factory=list)
     
 
 system_prompt = """You are an expert career and learning path advisor. Your role is to help users create detailed profiles of their learning goals and interests. You engage in thoughtful conversation to understand their aspirations deeply. 
@@ -100,6 +103,7 @@ CONVERSATION GUIDELINES:
 - Be encouraging and supportive while maintaining professionalism
 
 REQUIRED DATA POINTS TO GATHER (collect naturally through conversation):
+- Life Path: User's overall desired career or learning path
 - Skill level: Current expertise and relevant background
 - Learning style: Preferred methods of learning
 - Time commitment: Available time and desired pace
@@ -121,6 +125,7 @@ RESPONSE FORMAT:
 Return a JSON object with two fields:
 {
     "profile": {
+        "life_path": "string describing overall desired career or learning path",
         "skill_level": "string describing current expertise level",
         "interests": ["list of interests"],
         "time_commitment": "string describing available time",
@@ -149,11 +154,11 @@ prompter_agent = Agent(
 # add dynamic system prompt based on dependencies #? (changed to tool call for now) --> but this seemed to be causing repeated requests to the openAI API, thus the lag
 @prompter_agent.system_prompt
 async def ask_next_question(ctx: RunContext[AgentDependencies]) -> str:
-    return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information."
+    return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information and especially fill in for the missing fields: {ctx.deps.missing_fields}"
 
 
 #? define a tool call where it can evaluate the completeness of the userprofile, and end this chat phase and move to the next. also the followup questions are really good! but not all being captured into the prfoile. need to fix that!
-async def check_profile_completion(profile: UserProfile) -> bool:
+async def check_profile_completion(profile: UserProfile) -> Tuple[bool, List[str]]:
     """
     Check if the user profile is complete and return completion status and missing fields.
     Args:
@@ -166,13 +171,14 @@ async def check_profile_completion(profile: UserProfile) -> bool:
     if not is_complete:
         print(f"Incomplete fields: {missing_fields}")
     
-    return is_complete
+    return is_complete, missing_fields
 
 
 async def test_chat_flow():
     # Initialize empty profile and conversation history
     profile = UserProfile()
     conversation_history = []
+    missing_fields_deps = []
     
     print("Welcome to your life path! What would you like to become?\n")
 
@@ -188,7 +194,7 @@ async def test_chat_flow():
         # Add user input to history
         conversation_history.append(ChatMessage(role="user", content=user_input))
 
-        deps = AgentDependencies(user_profile=profile, conversation_history=conversation_history)
+        deps = AgentDependencies(user_profile=profile, conversation_history=conversation_history, missing_fields=missing_fields_deps)
         
         try:
             response1 = await prompter_agent.run(user_input, deps=deps)
@@ -200,19 +206,28 @@ async def test_chat_flow():
                 print(profile.model_dump_json(indent=2))
 
                 # Check profile completion
-                is_complete = await check_profile_completion(profile)
+                is_complete, missing_fields = await check_profile_completion(profile)
                 
                 if is_complete:
                     print("\nProfile is complete! Moving to next phase...")
-                    break
-           # Print follow-up question
+
+                    return profile
+                
+                # if there are still missing fields, we make a second call to the LLM just to generate a more targeted follow-up question
+                missing_fields_deps = missing_fields
+
+                deps = AgentDependencies(user_profile=profile, conversation_history=conversation_history, missing_fields=missing_fields_deps)
+
+                response2 = await prompter_agent.run(user_input, deps=deps)
+                
+                # Print follow-up question
                 print("\nFollow-up Question:")
-                print(response1.data.follow_up_question)
+                print(response2.data.follow_up_question)
                 
                 # Add assistant's follow-up question to conversation history
                 conversation_history.append(ChatMessage(
                     role="assistant",
-                    content=response1.data.follow_up_question
+                    content=response2.data.follow_up_question
                 ))
                 
         except Exception as e:
@@ -221,7 +236,7 @@ async def test_chat_flow():
             traceback.print_exc()
 
 def run_test():
-    asyncio.run(test_chat_flow())
+    return asyncio.run(test_chat_flow())
 
 if __name__ == "__main__":
-    run_test()
+    completed_profile = run_test()
