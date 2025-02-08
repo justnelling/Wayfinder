@@ -189,7 +189,7 @@ async def test_chat_flow():
         # Exit condition
         if user_input.lower() == "exit":
             print("Goodbye!")
-            break
+            return profile.model_dump() # even if incomplete return the profile
     
         # Add user input to history
         conversation_history.append(ChatMessage(role="user", content=user_input))
@@ -235,8 +235,9 @@ async def test_chat_flow():
             import traceback
             traceback.print_exc()
 
-def run_test():
-    return asyncio.run(test_chat_flow())
+async def run_test():
+    # return asyncio.run(test_chat_flow())
+    return await test_chat_flow()
 
 if __name__ == "__main__":
     completed_profile = run_test()

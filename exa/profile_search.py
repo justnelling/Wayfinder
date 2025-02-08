@@ -148,7 +148,7 @@ class ExaSearchClient:
             resolved_search_type=getattr(response, 'resolved_search_type', None)
         )
 
-def create_curriculum_focused_exa_query(profile_dict: dict) -> str:
+def create_curriculum_focused_exa_query(profile_dict: dict, continuation_query: str) -> str:
     base_text = f"""
     Designing a personalized learning curriculum for someone pursuing {profile_dict.get('life_path', 'their chosen field')}. 
     Key specifications:
@@ -165,14 +165,13 @@ def create_curriculum_focused_exa_query(profile_dict: dict) -> str:
     """
 
     # Continuation query focused on finding curriculum resources
-    continuation_query = base_text + " To build an effective learning pathway for this user's profile, here's a comprehensive list of learning materials, youtube tutorials, online courses, op-ed pieces and similar resources:"
+    combined_continuation_query = f"{base_text} {continuation_query}"
 
-    return continuation_query
+    return combined_continuation_query
 
-def main():
-    completed_profile = run_test() # python dictionary
+def call_Exa(profile: dict, continuation_query: str) -> ExaSearchResponse:
 
-    curriculum_query = create_curriculum_focused_exa_query(completed_profile)
+    curriculum_query = create_curriculum_focused_exa_query(profile, continuation_query)
 
     client = ExaSearchClient()
     
@@ -190,7 +189,7 @@ def main():
         #     'query': "Key points"
         # },
         summary={'query': "Key points"},
-        num_results=10,
+        num_results=5,
         # category="research paper",
         # include_domains=["arxiv.org"],
         # start_published_date="2023-01-01T00:00:00.000Z",
@@ -213,8 +212,10 @@ def main():
         # for highlight, score in zip(result.highlights, result.highlight_scores):
         #     print(f"- {highlight} (score: {score})")
 
+    return advanced_response
+
 # Example usage
 if __name__ == "__main__":
-    main()
+    call_Exa()
     
 

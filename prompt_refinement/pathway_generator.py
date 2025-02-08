@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
-from prompter import UserProfile
 from dataclasses import dataclass
 from pydantic_ai import Agent, RunContext, ModelRetry
 from pydantic_ai.models.openai import OpenAIModel
@@ -10,6 +9,16 @@ import os
 import asyncio
 import time
 from functools import wraps
+import sys
+import io
+from datetime import datetime
+
+# Add the project root directory to Python path
+root_dir = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(root_dir))
+
+from exa.profile_search import call_Exa, ExaSearchResult, ExaSearchResponse
+from prompter import UserProfile, run_test
 
 '''
 #! TODO: 3/2/25
@@ -148,7 +157,7 @@ def async_measure_time(func):
         start_time = time.perf_counter()
         result = await func(*args, **kwargs)
         end_time = time.perf_counter()
-        print(f"{func.__name__} executed in {end_time - start_time:0.4f} seconds")
+        print(f"\n\n{func.__name__} executed in {end_time - start_time:0.4f} seconds\n\n")
         return result
     return wrapper
 
@@ -160,7 +169,7 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     '''
 
     llm_prompt = f"""
-    Create a detailed learning roadmap for the following user profile:
+    Create a practical, hands-on learning roadmap following the "learn by doing" philosophy. The pathway should focus on building real things from day one, teaching theory contextually as needed while working on projects. Think Fast.ai's approach: start with the end goal and learn the necessary components as they become relevant.
     
     User Profile:
     - Skill Level: {profile_dict.get('skill_level')}
@@ -171,6 +180,14 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     - Goals: {', '.join(profile_dict.get('goals', []))}
     - Constraints: {', '.join(profile_dict.get('constraints', []))}
     - Motivation: {profile_dict.get('motivation')}
+
+    Learning Philosophy:
+    - Start with working examples and real applications
+    - Learn theory in context of practical needs
+    - Build complete, working projects from day one
+    - Focus on "why this matters" before diving into "how it works"
+    - Emphasize hands-on experimentation and trial-and-error learning
+    - Learn concepts when they're needed, not in abstract isolation
     
     Each learning node must specify:
     1. Title: Core topic or skill being addressed in this learning unit
@@ -247,13 +264,17 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     - Clear prerequisites from other Level 2 modules
     - At least 2-3 Level 3 sub-nodes
     - Estimated duration for the entire module
-    - Learning objectives that tie to the overall goals
+    - A substantial project that demonstrates practical value
+    - Hands-on activities that build toward the main project
+    - Real-world applications and use cases
 
     Each Level 3 unit MUST include:
     - Specific, hands-on learning activities
-    - Concrete deliverables or projects
+    - Mini-project that teaches core concept through doing
+    - Experimentation tasks to deepen understanding
     - Direct connection to user's goals: {', '.join(profile_dict.get('goals', []))}
     - Detailed key concepts and skills
+    - Integration with previous projects
 
     Return the learning pathway as a JSON object that strictly follows this schema:
     {{
@@ -288,8 +309,21 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
     3. Prerequisites form a logical learning sequence
     4. Time estimates are realistic given the user's commitment of {profile_dict.get('time_commitment')}
 
-    IMPORTANT: be sure to think through the iterative steps in this learning path and think of sub-nodes involved in the step-by-step approach to learning in this pathway. Populate these as sub_nodes following the same structure as the parent node.
+    Additional Requirements:
+    1. Every concept must be introduced through practical need
+    2. Theory should follow practice, not precede it
+    3. Each unit should produce something working and useful
+    4. Projects should be engaging and demonstrate immediate value
+    5. Learning path should maintain momentum through quick wins
+    6. Complex topics should be introduced gradually through doing
 
+    Remember:
+    - Focus on building working systems first
+    - Introduce theory only when practically needed
+    - Maintain high engagement through project completion
+    - Enable learning through experimentation
+    - Provide constant feedback through working code
+    - Build confidence through progressive project complexity
     """
 
     try: 
@@ -308,6 +342,210 @@ async def create_learning_pathway(profile_dict: dict) -> LearningNode:
         traceback.print_exc()
         raise Exception(f"Failed to generate learning pathway: {e}")
     
+#? TREE TRAVERSAL FUNCTIONS
+def print_node_structure(node: LearningNode, level: int = 0, buffer: io.StringIO = None, output_file='pathway_generator_samples.md'):
+    # Initialize buffer at root level
+    if level == 0:
+        buffer = io.StringIO()
+        # Add timestamp header
+        print(f"\n## Learning Pathway Structure - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        buffer.write(f"\n## Learning Pathway Structure - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+    def print_to_both(text):
+        print(text)
+        buffer.write(text + "\n")
+
+    if not node:
+        print_to_both("Empty node received")
+        return
+        
+    indent = "  " * level
+    print_to_both(f"{indent}📚 {node.title or 'Untitled'}")
+    print_to_both(f"{indent}Description: {node.description or 'No description'}")
+    print_to_both(f"{indent}Difficulty: {node.difficulty or 'Not specified'}")
+    print_to_both(f"{indent}Duration: {node.estimated_duration or 'Not specified'}")
+    print_to_both(f"{indent}Continuation Query: {node.continuation_query or 'Not specified'}")
+    
+    print_to_both(f"{indent}Learning Objectives:")
+    for objective in (node.learning_objectives or []):
+        print_to_both(f"{indent}- {objective}")
+        
+    print_to_both(f"{indent}Key Concepts:")
+    for concept in (node.key_concepts or []):
+        print_to_both(f"{indent}- {concept}")
+        
+    if hasattr(node, 'resources') and node.resources:
+        print_to_both(f"{indent}Resources:")
+        if isinstance(node.resources, ExaSearchResponse):
+            for result in node.resources.results:
+                print_to_both(f"\n{indent}  📌 {result.title or 'Untitled'}")
+                print_to_both(f"{indent}    URL: {result.url}")
+                if result.published_date:
+                    print_to_both(f"{indent}    Published: {result.published_date}")
+                #! remove highlights for now. returning ass responses. prolly cos i didnt send in a good query to exa api
+                # if result.highlights:
+                #     print_to_both(f"{indent}    Highlights: {result.highlights[:200]}...")
+                if result.summary:
+                    print_to_both(f"{indent}    Summary: {result.summary}")
+                print_to_both(f"{indent}    {'─' * 50}")
+        else:
+            for resource in node.resources:
+                print_to_both(f"{indent}  - {resource}")
+    print_to_both("")
+    
+    # Recursively process sub-nodes
+    for sub_node in (node.sub_nodes or []):
+        print_node_structure(sub_node, level + 1, buffer)
+
+    # Write to file only at root level
+    if level == 0:
+        file_path = output_file
+        output_str = buffer.getvalue()
+        
+        # Read existing content
+        existing_content = ""
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+        
+        # Write new content followed by existing content
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(output_str + "\n" + existing_content)
+        
+        buffer.close()
+
+from typing import Generator, List, Optional, Callable
+from enum import Enum
+from pydantic import BaseModel
+
+class TraversalStrategy(Enum):
+    DEPTH_FIRST = "depth_first"
+    BREADTH_FIRST = "breadth_first"
+    LEVEL_ORDER = "level_order"
+
+def traverse_nodes(
+    root_node: LearningNode, 
+    strategy: TraversalStrategy = TraversalStrategy.LEVEL_ORDER,
+    filter_func: Optional[Callable[[LearningNode], bool]] = None
+) -> Generator[LearningNode, None, None]:
+    """
+    Traverse the LearningNode tree using the specified strategy.
+    
+    Args:
+        root_node (LearningNode): Root node of the learning pathway
+        strategy (TraversalStrategy): Traversal strategy to use
+        filter_func (Callable): Optional function to filter nodes
+        
+    Yields:
+        LearningNode: Nodes in the order determined by the traversal strategy
+    
+    Example:
+        # Process nodes that need resources
+        def needs_resources(node: LearningNode) -> bool:
+            return len(node.resources) == 0
+            
+        for node in traverse_nodes(
+            learning_pathway, 
+            strategy=TraversalStrategy.BREADTH_FIRST,
+            filter_func=needs_resources
+        ):
+            await process_node_resources(node)
+    """
+    if strategy == TraversalStrategy.DEPTH_FIRST:
+        yield from _depth_first_traverse(root_node, filter_func)
+    elif strategy == TraversalStrategy.BREADTH_FIRST:
+        yield from _breadth_first_traverse(root_node, filter_func)
+    elif strategy == TraversalStrategy.LEVEL_ORDER:
+        yield from _level_order_traverse(root_node, filter_func)
+
+def _depth_first_traverse(
+    node: LearningNode, 
+    filter_func: Optional[Callable[[LearningNode], bool]] = None
+) -> Generator[LearningNode, None, None]:
+    """Depth-first traversal of LearningNode tree."""
+    if filter_func is None or filter_func(node):
+        yield node
+    
+    for sub_node in node.sub_nodes:
+        yield from _depth_first_traverse(sub_node, filter_func)
+
+def _breadth_first_traverse(
+    root: LearningNode, 
+    filter_func: Optional[Callable[[LearningNode], bool]] = None
+) -> Generator[LearningNode, None, None]:
+    """Breadth-first traversal of LearningNode tree."""
+    queue = [root]
+    while queue:
+        node = queue.pop(0)
+        if filter_func is None or filter_func(node):
+            yield node
+        queue.extend(node.sub_nodes)
+
+def _level_order_traverse(
+    root: LearningNode, 
+    filter_func: Optional[Callable[[LearningNode], bool]] = None
+) -> Generator[LearningNode, None, None]:
+    """Level-order traversal of LearningNode tree with level tracking."""
+    if not root:
+        return
+
+    queue = [(root, 0)]  # (node, level)
+    current_level = 0
+    level_nodes = []
+
+    while queue:
+        node, level = queue.pop(0)
+
+        if level > current_level:
+            for level_node in level_nodes:
+                if filter_func is None or filter_func(level_node):
+                    yield level_node
+            level_nodes = []
+            current_level = level
+
+        level_nodes.append(node)
+        queue.extend((sub_node, level + 1) for sub_node in node.sub_nodes)
+
+    # Yield remaining nodes in the last level
+    for node in level_nodes:
+        if filter_func is None or filter_func(node):
+            yield node
+
+# Useful filter functions
+def needs_resources(node: LearningNode) -> bool:
+    """Filter for nodes that have no resources."""
+    return len(node.resources) == 0
+
+def is_leaf_node(node: LearningNode) -> bool:
+    """Filter for leaf nodes (no sub-nodes)."""
+    return len(node.sub_nodes) == 0
+
+def by_difficulty(difficulty: str) -> Callable[[LearningNode], bool]:
+    """Filter nodes by difficulty level."""
+    return lambda node: node.difficulty == difficulty
+
+# Example usage with async processing
+async def process_learning_pathway(profile: dict, learning_pathway: LearningNode):
+    """Process all nodes that need resources in the learning pathway."""
+    
+    async def process_node(profile: dict, node: LearningNode):
+        """Process a single node's continuation query."""
+        if node.continuation_query and node.continuation_query != "Not specified":
+            try:
+                # Call Exa and get properly formatted resources
+                resources = call_Exa(profile, node.continuation_query)
+                node.resources = resources #! update the node's resources with the returned resources
+            except Exception as e:
+                print(f"Error processing node '{node.title}': {e}")
+
+    # Process nodes breadth-first (level by level)
+    for node in traverse_nodes(
+        learning_pathway,
+        strategy=TraversalStrategy.LEVEL_ORDER,
+        # filter_func=needs_resources
+    ):
+        await process_node(profile, node)
+    
 async def main():
     # Sample user profile
     profile = {
@@ -319,36 +557,18 @@ async def main():
         "prior_experience": ["Basic Python", "Statistics"],
         "goals": ["Build ML models", "Understand deep learning"]
     }
+    # profile = await run_test()
     
     try:
         # Create the learning pathway
         learning_pathway = await create_learning_pathway(profile)
         
         # Print the structure (for verification)
-        print_node_structure(learning_pathway)
+        # print_node_structure(learning_pathway)
         
-        # Example of how to use the continuation query with exa AI
-        # for node in traverse_nodes(learning_pathway):
-        #     if node.continuation_query:
-        #         try:
-        #             results = exa.search(
-        #                 node.continuation_query,
-        #                 type="neural",
-        #                 use_autoprompt=False
-        #             )
-        #             # Store results for later use
-        #             node.resources = [
-        #                 ResourceItem(
-        #                     type=determine_resource_type(result),
-        #                     title=result.get("title", ""),
-        #                     url=result.get("url", ""),
-        #                     description=result.get("text", "")[:200],
-        #                     estimated_time="varies"  # You might want to estimate this based on content type
-        #                 )
-        #                 for result in results
-        #             ]
-        #         except Exception as e:
-        #             print(f"Error searching resources for {node.title}: {e}")
+        await process_learning_pathway(profile, learning_pathway)
+
+        print_node_structure(learning_pathway)
         
         return learning_pathway
         
@@ -356,35 +576,6 @@ async def main():
         print(f"Error creating learning pathway: {e}")
         import traceback
         traceback.print_exc()
-    
-def print_node_structure(node: LearningNode, level: int = 0):
-    if not node:
-        print("Empty node received")
-        return
-        
-    indent = "  " * level
-    print(f"{indent}📚 {node.title or 'Untitled'}")
-    print(f"{indent}Description: {node.description or 'No description'}")
-    print(f"{indent}Difficulty: {node.difficulty or 'Not specified'}")
-    print(f"{indent}Duration: {node.estimated_duration or 'Not specified'}")
-    print(f"{indent}Continuation Query: {node.continuation_query or 'Not specified'}")
-    
-    print(f"{indent}Learning Objectives:")
-    for objective in (node.learning_objectives or []):
-        print(f"{indent}- {objective}")
-        
-    print(f"{indent}Key Concepts:")
-    for concept in (node.key_concepts or []):
-        print(f"{indent}- {concept}")
-        
-    if node.resources:
-        print(f"{indent}Resources:")
-        for resource in node.resources:
-            print(f"{indent}  - [{resource.type or 'unknown'}] {resource.title or 'Untitled'}")
-    print()
-    
-    for sub_node in (node.sub_nodes or []):
-        print_node_structure(sub_node, level + 1)
 
 if __name__ == "__main__":
     import asyncio
