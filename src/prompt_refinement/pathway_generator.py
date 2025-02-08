@@ -13,18 +13,18 @@ import sys
 import io
 from datetime import datetime
 
-# Add the project root directory to Python path
+# Add src as root dir to python sys path
 root_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_dir))
 
-from exa.profile_search import call_Exa, ExaSearchResult, ExaSearchResponse
-from prompter import UserProfile, run_test
+from exa_search.profile_search import call_Exa, ExaSearchResult, ExaSearchResponse
+from prompter import UserProfile, run_LLM_prompter_chat
 
 '''
-#! TODO: 3/2/25
+#TODO: 
 
-ok next steps: have to experiment with different user profile types, and see how long it takes for different AI models to respond as well as the quality of the responses.
-
+1. make use of ResourceItem schema 
+2. refactor the traversal of the LearningNode tree 
 '''
 
 # System prompt for the curriculum builder LLM
@@ -53,7 +53,7 @@ When creating the learning path:
 You must return your response in a structured JSON format that matches the specified schema.
 """
 
-
+# currently not yet in use
 class ResourceItem(BaseModel):
     type: str = Field(None, description="Type of resource (video, article, course, book, etc.)")
     title: str = Field(None, description="Title of the resource")
@@ -557,7 +557,7 @@ async def main():
         "prior_experience": ["Basic Python", "Statistics"],
         "goals": ["Build ML models", "Understand deep learning"]
     }
-    # profile = await run_test()
+    # profile = await run_LLM_prompter_chat()
     
     try:
         # Create the learning pathway

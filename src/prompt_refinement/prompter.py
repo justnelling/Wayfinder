@@ -174,7 +174,7 @@ async def check_profile_completion(profile: UserProfile) -> Tuple[bool, List[str
     return is_complete, missing_fields
 
 
-async def test_chat_flow():
+async def chat_flow():
     # Initialize empty profile and conversation history
     profile = UserProfile()
     conversation_history = []
@@ -235,9 +235,9 @@ async def test_chat_flow():
             import traceback
             traceback.print_exc()
 
-async def run_test():
-    # return asyncio.run(test_chat_flow())
-    return await test_chat_flow()
+async def run_LLM_prompter_chat():
+    # return asyncio.run(chat_flow())
+    return await chat_flow()
 
 if __name__ == "__main__":
-    completed_profile = run_test()
+    completed_profile = run_LLM_prompter_chat()

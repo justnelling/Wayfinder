@@ -1,5 +1,26 @@
 ## Next steps:
 
+_8/2/25_
+
+next steps: build this into an API backend and then create the frontend
+
+consolidated all the scripts into /src dir as root dir (for python sys path)
+
+/prompt_refinement/prompter.py:
+
+&emsp;- starts the chat_flow(), which constructs user profile through chat
+
+/prompt_refinement/pathway_generator:
+
+&emsp;- now takes in the profile from `prompter.py`, and will feed it to LLM again to generate a curriculum
+&emsp;- curriculum follows a tree structure, with 3 levels
+&emsp;- each node in tree contains a continuation prompt which is what we feed into `profile_search.py` to get the exa web results
+
+/exa_search/profile_search:
+
+&emsp;- now takes in the continuation query from prompt_refinement/pathway_generator.py
+&emsp;- exa API requests look good, just the 'response.text' field sometimes reads in gibberish
+
 _3/2/25_
 
 ok next steps: have to experiment with different user profile types, and see how long it takes for different AI models to respond as well as the quality of the responses.

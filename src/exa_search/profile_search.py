@@ -9,7 +9,6 @@ from pathlib import Path
 root_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_dir))
 
-from prompt_refinement.prompter import run_test
 from exa_py import Exa
 from dataclasses import dataclass, asdict
 from typing import List, Optional, Union, Dict, Any, Literal
@@ -208,7 +207,7 @@ def call_Exa(profile: dict, continuation_query: str) -> ExaSearchResponse:
         print(f"\nTitle: {result.title}")
         print(f"URL: {result.url}")
         print(f"Summary: {result.summary}")
-        print(f"Text: {result.text}")
+        print(f"Text: {result.text}") #! This seems to be returning gibberish mostly.. 
         # for highlight, score in zip(result.highlights, result.highlight_scores):
         #     print(f"- {highlight} (score: {score})")
 
