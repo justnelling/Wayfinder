@@ -1,5 +1,8 @@
 ## Next steps:
 
+_GLOBAL IMPROVEMENTS_
+touchup: need to tweak the pathway_generator system prompt to adopt jeremy howard's learning styles principles, but also tailor it to the user profile's learning style i think.
+
 _8/2/25_
 
 next steps: build this into an API backend and then create the frontend

@@ -43,32 +43,71 @@ class UserProfile(BaseModel):
     constraints: Optional[List[str]] = Field(default_factory=list, description="Limitations and restrictions")
     motivation: Optional[str] = Field(default=None, description="Core motivation for learning")
 
-    def is_complete(self) -> Tuple[bool, List[str]]:
+    def is_complete(self) -> dict:
         """
         Check if all fields meet requirements.
-        Returns (is_complete, list_of_missing_fields)
+        Returns completion status dictionary
         """
-        requirements = {
-            'life_path': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
-            'skill_level': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
+        # Critical fields that must have content
+        critical_requirements = {
+            'life_path': lambda x: x is not None and isinstance(x, str) and len(x) >= 1,
+            'skill_level': lambda x: x is not None and isinstance(x, str) and len(x) >= 1,
+            'time_commitment': lambda x: x is not None and isinstance(x, str) and len(x) >= 1,
             'interests': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
-            'time_commitment': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
-            'geographical_context': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
-            'learning_style': lambda x: x is not None and isinstance(x, str) and len(x) >= 5,
-            'prior_experience': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
-            'goals': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
-            'constraints': lambda x: isinstance(x, list) and len(x) >= 1 and all(isinstance(i, str) and i.strip() for i in x),
-            'motivation': lambda x: x is not None and isinstance(x, str) and len(x) >= 15
+            'learning_style': lambda x: x is None or (isinstance(x, str) and len(x) >= 1),
         }
 
-        missing_fields = []
-        for field, requirement in requirements.items():
+        # Optional fields that can be empty but must be properly typed
+        optional_requirements = {
+            'geographical_context': lambda x: x is None or (isinstance(x, str) and len(x) >= 1),
+            'prior_experience': lambda x: isinstance(x, list) and all(isinstance(i, str) and i.strip() for i in x),
+            'goals': lambda x: isinstance(x, list) and all(isinstance(i, str) and i.strip() for i in x),
+            'constraints': lambda x: isinstance(x, list) and all(isinstance(i, str) and i.strip() for i in x),
+            'motivation': lambda x: x is None or (isinstance(x, str) and len(x) >= 0)
+        }
+
+        missing_critical = []
+        missing_optional = []
+
+        # Check critical fields
+        for field, requirement in critical_requirements.items():
             value = getattr(self, field)
             if not requirement(value):
-                missing_fields.append(field)
+                missing_critical.append(field)
 
-        return len(missing_fields) == 0, missing_fields
+        # Check optional fields
+        for field, requirement in optional_requirements.items():
+            value = getattr(self, field)
+            if not requirement(value):
+                missing_optional.append(field)
 
+        # Calculate completion percentage based on actual filled fields
+        total_fields = len(critical_requirements) + len(optional_requirements)
+        filled_fields = 0
+
+        # Count actually filled fields (not just properly typed)
+        for field in critical_requirements.keys():
+            value = getattr(self, field)
+            if value and (not isinstance(value, list) or len(value) > 0):
+                filled_fields += 1
+
+        for field in optional_requirements.keys():
+            value = getattr(self, field)
+            if value and (not isinstance(value, list) or len(value) > 0):
+                filled_fields += 1
+
+        completion_percentage = (filled_fields / total_fields) * 100
+
+        print(f"Filled fields: {filled_fields}/{total_fields}")  # Debug log
+        print(f"Completion percentage: {completion_percentage}%")  # Debug log
+
+        return {
+            'is_complete': len(missing_critical) == 0 and completion_percentage == 100,
+            'missing_critical': missing_critical,
+            'missing_optional': missing_optional,
+            'completion_percentage': completion_percentage
+        }
+    
 class AgentResponse(BaseModel):
     profile: UserProfile
     follow_up_question: str
@@ -157,6 +196,8 @@ async def ask_next_question(ctx: RunContext[AgentDependencies]) -> str:
     return f"Based on this conversation history: {ctx.deps.conversation_history} and the user's profile thus far: {ctx.deps.user_profile}, ask the next question to gather more information and especially fill in for the missing fields: {ctx.deps.missing_fields}"
 
 
+#! BELOW (old code): simulating websocket chat flow with CLI. Instead we're moving the websocket chat functionality to src/main.py. 
+
 #? define a tool call where it can evaluate the completeness of the userprofile, and end this chat phase and move to the next. also the followup questions are really good! but not all being captured into the prfoile. need to fix that!
 async def check_profile_completion(profile: UserProfile) -> Tuple[bool, List[str]]:
     """
@@ -172,7 +213,6 @@ async def check_profile_completion(profile: UserProfile) -> Tuple[bool, List[str
         print(f"Incomplete fields: {missing_fields}")
     
     return is_complete, missing_fields
-
 
 async def chat_flow():
     # Initialize empty profile and conversation history

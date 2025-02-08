@@ -18,7 +18,6 @@ root_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_dir))
 
 from exa_search.profile_search import call_Exa, ExaSearchResult, ExaSearchResponse
-from prompter import UserProfile, run_LLM_prompter_chat
 
 '''
 #TODO: 
@@ -546,43 +545,54 @@ async def process_learning_pathway(profile: dict, learning_pathway: LearningNode
     ):
         await process_node(profile, node)
     
-async def main():
-    # Sample user profile
-    profile = {
-        "life_path": "Machine Learning Engineer",
-        "skill_level": "beginner",
-        "interests": ["AI", "Python", "Mathematics"],
-        "time_commitment": "10 hours per week",
-        "learning_style": "hands-on",
-        "prior_experience": ["Basic Python", "Statistics"],
-        "goals": ["Build ML models", "Understand deep learning"]
-    }
-    # profile = await run_LLM_prompter_chat()
-    
+
+async def generate_complete_pathway(profile: dict):
+    """Main pathway generation function that other modules can import"""
     try:
-        # Create the learning pathway
         learning_pathway = await create_learning_pathway(profile)
-        
-        # Print the structure (for verification)
-        # print_node_structure(learning_pathway)
-        
-        await process_learning_pathway(profile, learning_pathway)
-
-        print_node_structure(learning_pathway)
-        
+        await process_learning_pathway(profile, learning_pathway) #? this updates nodes with resources after exa search
         return learning_pathway
-        
     except Exception as e:
-        print(f"Error creating learning pathway: {e}")
-        import traceback
-        traceback.print_exc()
+        raise Exception(f"Error creating learning pathway: {str(e)}")
 
-if __name__ == "__main__":
-    import asyncio
+#!  This was old CLI implementation
+# async def generate_pathway():
+#     # Sample user profile
+#     # profile = {
+#     #     "life_path": "Machine Learning Engineer",
+#     #     "skill_level": "beginner",
+#     #     "interests": ["AI", "Python", "Mathematics"],
+#     #     "time_commitment": "10 hours per week",
+#     #     "learning_style": "hands-on",
+#     #     "prior_experience": ["Basic Python", "Statistics"],
+#     #     "goals": ["Build ML models", "Understand deep learning"]
+#     # }
+#     profile = await run_LLM_prompter_chat()
     
-    # Create and run the event loop
-    loop = asyncio.get_event_loop()
-    learning_pathway = loop.run_until_complete(main())
+#     try:
+#         # Create the learning pathway
+#         learning_pathway = await create_learning_pathway(profile)
+        
+#         # Print the structure (for verification)
+#         # print_node_structure(learning_pathway)
+        
+#         await process_learning_pathway(profile, learning_pathway)
+
+#         print_node_structure(learning_pathway)
+        
+#         return learning_pathway
+        
+#     except Exception as e:
+#         print(f"Error creating learning pathway: {e}")
+#         import traceback
+#         traceback.print_exc()
+
+# if __name__ == "__main__":
+#     import asyncio
     
-    # Optional: Close the loop
-    loop.close()
+#     # Create and run the event loop
+#     loop = asyncio.get_event_loop()
+#     learning_pathway = loop.run_until_complete(generate_pathway())
+    
+#     # Optional: Close the loop
+#     loop.close()
