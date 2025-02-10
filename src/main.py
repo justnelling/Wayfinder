@@ -4,14 +4,23 @@ Handles all API routing for backend + the chat functionality
 
 # src/main.py
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import json
-from src.prompt_refinement.prompter import (
+from prompt_refinement.prompter import (
     UserProfile, ChatMessage, AgentDependencies, 
     prompter_agent, check_profile_completion
 )
-from src.prompt_refinement.pathway_generator import generate_complete_pathway
+from prompt_refinement.pathway_generator import generate_complete_pathway
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with your frontend domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ChatState:
     def __init__(self):
@@ -56,7 +65,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "profile": chat_state.profile.model_dump()
                     })
 
-                    # Get completion status
+                    # Get completion status 
+                    #! we currently aren't enforcing missing_critical vs missing_optional logic. come back to it
                     completion_status = chat_state.profile.is_complete()
                     current_completion = completion_status['completion_percentage']
                     
@@ -75,6 +85,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     # 2. We've retried twice with at least 80% completion
                     if completion_status['is_complete'] or (retry_count >= 2 and current_completion >= 80):
                         print(f"Generating pathway (Completion: {current_completion}%, Retries: {retry_count})")
+
+                        # Send loading state to frontend
+                        await websocket.send_json({
+                            "type": "generating_pathway",
+                            "content": "Generating your personalized learning pathway..."
+                        })
+
                         learning_pathway = await generate_complete_pathway(
                             chat_state.profile.model_dump()
                         )
@@ -85,6 +102,15 @@ async def websocket_endpoint(websocket: WebSocket):
                             "learning_pathway": learning_pathway
                         })
                         return
+                    
+                    #! if more than 5 retries and conversation not going anywhere: currently just breaks out of loop
+                    if retry_count >= 5 and current_completion == last_completion_percentage:
+                        print(f"Too many retries without valid user input. Breaking...")
+                        await websocket.send_json({
+                        "type": "question",
+                        "content": "Sorry. I am not getting any valid inputs from your end. Please refer to my previous prompts and try again later."
+                    })
+                        break
 
                     # Continue with follow-up questions
                     chat_state.missing_fields_deps = (
@@ -132,3 +158,6 @@ async def generate_pathway_endpoint(profile: dict):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
