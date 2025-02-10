@@ -99,7 +99,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.send_json({
                             "type": "complete",
                             "profile": chat_state.profile.model_dump(),
-                            "learning_pathway": learning_pathway
+                            "learning_pathway": learning_pathway.model_dump()
                         })
                         return
                     
