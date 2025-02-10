@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Send, Menu, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
+// Type definitions
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -19,6 +21,30 @@ interface UserProfile {
   motivation: string | null;
 }
 
+interface ResourceItem {
+  title: string;
+  url: string;
+  type: string;
+  description?: string;
+}
+
+interface Resources {
+  results: ResourceItem[];
+}
+
+interface LearningNodeData {
+  title: string;
+  description: string;
+  learning_objectives: string[];
+  difficulty: string;
+  prerequisites: string[];
+  estimated_duration: string;
+  key_concepts: string[];
+  resources: Resources;
+  sub_nodes: LearningNodeData[];
+  continuation_query?: string;
+}
+
 interface WebSocketResponse {
   type:
     | "question"
@@ -27,10 +53,11 @@ interface WebSocketResponse {
     | "profile_update"
     | "generating_pathway";
   content?: string;
-  learning_pathway?: any;
-  profile?: UserProfile;
+  learning_pathway?: LearningNodeData | string;
+  profile?: UserProfile | string;
 }
 
+// Loading Modal Component
 const LoadingModal: React.FC<{ isOpen: boolean }> = ({ isOpen }) => {
   if (!isOpen) return null;
 
@@ -56,13 +83,15 @@ const LoadingModal: React.FC<{ isOpen: boolean }> = ({ isOpen }) => {
   );
 };
 
+// Main LandingPage Component
 const LandingPage: React.FC = () => {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState<string>("");
   const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [learningPathway, setLearningPathway] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -72,60 +101,119 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8000/chat");
 
+    ws.onopen = () => {
+      console.log("WebSocket connection established");
+    };
+
     ws.onmessage = (event) => {
-      const data: WebSocketResponse = JSON.parse(event.data);
+      try {
+        const data: WebSocketResponse = JSON.parse(event.data);
+        console.log("Received WebSocket message:", data);
 
-      switch (data.type) {
-        case "question":
-        case "error":
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: data.content || "Error occurred",
-            },
-          ]);
-          break;
+        switch (data.type) {
+          case "question":
+          case "error":
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: data.content || "An error occurred",
+              },
+            ]);
+            if (data.type === "error") {
+              setError(data.content || "An unknown error occurred");
+            }
+            break;
 
-        case "profile_update":
-          if (data.profile) {
-            setProfile(data.profile);
-          }
-          break;
+          case "profile_update":
+            if (data.profile) {
+              const profileData =
+                typeof data.profile === "string"
+                  ? JSON.parse(data.profile)
+                  : data.profile;
+              setProfile(profileData);
+              console.log("Profile updated:", profileData);
+            }
+            break;
 
-        case "generating_pathway":
-          setIsGenerating(true);
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: data.content || "Generating your learning pathway...",
-            },
-          ]);
-          break;
+          case "generating_pathway":
+            setIsGenerating(true);
+            setMessages((prev) => [
+              ...prev,
+              {
+                role: "assistant",
+                content: data.content || "Generating your learning pathway...",
+              },
+            ]);
+            break;
 
-        case "complete":
-          setIsGenerating(false);
-          if (data.learning_pathway) {
-            setLearningPathway(data.learning_pathway);
-          }
-          if (data.profile) {
-            setProfile(data.profile);
-          }
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content:
-                "Your profile is complete! I have generated your learning pathway.",
-            },
-          ]);
-          break;
+          case "complete":
+            setIsGenerating(false);
+            if (data.learning_pathway && data.profile) {
+              try {
+                // Parse the learning pathway data if it's a string
+                const pathway =
+                  typeof data.learning_pathway === "string"
+                    ? JSON.parse(data.learning_pathway)
+                    : data.learning_pathway;
+
+                // Parse the profile data if it's a string
+                const profileData =
+                  typeof data.profile === "string"
+                    ? JSON.parse(data.profile)
+                    : data.profile;
+
+                console.log("Navigating with data:", {
+                  profile: profileData,
+                  learningPathway: pathway,
+                });
+
+                // Navigate to the learning pathway page
+                navigate("/learning-pathway", {
+                  state: {
+                    profile: profileData,
+                    learningPathway: pathway,
+                  },
+                  replace: true,
+                });
+              } catch (error) {
+                console.error("Error processing pathway data:", error);
+                setError("Failed to process learning pathway data");
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    role: "assistant",
+                    content:
+                      "Sorry, there was an error processing your learning pathway. Please try again.",
+                  },
+                ]);
+              }
+            } else {
+              console.error("Missing required data:", {
+                hasPathway: !!data.learning_pathway,
+                hasProfile: !!data.profile,
+              });
+              setError("Missing required pathway or profile data");
+            }
+            break;
+
+          default:
+            console.warn("Unknown message type received:", data.type);
+        }
+      } catch (error) {
+        console.error("Error processing WebSocket message:", error);
+        setError("Failed to process server response");
       }
     };
 
     ws.onclose = () => {
       console.log("WebSocket connection closed");
+      setError("Connection to server lost");
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      setError("Connection error occurred");
     };
 
     setWsConnection(ws);
@@ -133,7 +221,7 @@ const LandingPage: React.FC = () => {
     return () => {
       ws.close();
     };
-  }, []);
+  }, [navigate]);
 
   useEffect(() => {
     scrollToBottom();
@@ -143,9 +231,15 @@ const LandingPage: React.FC = () => {
     e.preventDefault();
     if (!inputValue.trim()) return;
 
+    if (!wsConnection || wsConnection.readyState !== WebSocket.OPEN) {
+      setError("Connection to server lost. Please refresh the page.");
+      return;
+    }
+
     setMessages((prev) => [...prev, { role: "user", content: inputValue }]);
-    wsConnection?.send(inputValue);
+    wsConnection.send(inputValue);
     setInputValue("");
+    setError(null); // Clear any previous errors when sending new message
   };
 
   const renderProfileField = (key: keyof UserProfile, value: any) => {
@@ -199,6 +293,30 @@ const LandingPage: React.FC = () => {
         </div>
       </header>
 
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-50 border-l-4 border-red-400 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg
+                className="h-5 w-5 text-red-400"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main content area */}
       <main className="flex-1 overflow-hidden">
         <div className="h-full flex">
@@ -235,10 +353,14 @@ const LandingPage: React.FC = () => {
                   onChange={(e) => setInputValue(e.target.value)}
                   placeholder="Type your message..."
                   className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isGenerating}
                 />
                 <button
                   type="submit"
-                  className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    isGenerating ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                  disabled={isGenerating}
                 >
                   <Send className="h-5 w-5" />
                 </button>
