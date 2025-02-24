@@ -2,9 +2,8 @@
 import Exa from "npm:exa-js";
 import OpenAI from "npm:openai";
 
-const EXA_API_KEY = "02f84e73-f24e-4215-b1b3-8020de59a706";
-const OPENAI_API_KEY =
-  "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";
+const EXA_API_KEY = "";
+const OPENAI_API_KEY = "";
 
 const exa = new Exa(EXA_API_KEY);
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
